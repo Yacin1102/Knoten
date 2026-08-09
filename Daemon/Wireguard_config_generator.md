@@ -7,14 +7,13 @@
 
 **A single-file Go CLI that generates an X25519 key pair and writes a ready-to-use WireGuard `.conf` file.**
 
-|  |  |
-| --- | --- |
-| **Source** | `Wireguard_config_generator.go` |
-| **Language** | Go (requires **1.20+**, uses `crypto/ecdh`) |
-| **Dependencies** | None (standard library only) |
-| **Audience** | Anyone setting up a WireGuard node by hand |
-| **Status** | Working prototype |
-
+| Property         | Details                                     |
+| ---------------- | ------------------------------------------- |
+| **Source**       | `Wireguard_config_generator.go`             |
+| **Language**     | Go (requires **1.20+**, uses `crypto/ecdh`) |
+| **Dependencies** | None (standard library only)                |
+| **Audience**     | Anyone setting up a WireGuard node by hand  |
+| **Status**       | Working prototype                           |
 ---
 
 ## 1. Program flow
