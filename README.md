@@ -24,6 +24,9 @@ Coordination servers may still exist, but they only handle **discovery, identity
     
 5. **Access is a lease, never a possession.** Every grant carries an expiry and persists only through renewal. Revocation is simply expiry-now, so removing access is never a special operation, and abandoned access decays to nothing on its own.
     
+## Documentation
+
+**I am writing full, detailed code documentation, including UML and explanatory diagrams showing how dependencies, packages, functions, and code components connect. Since this is a student-driven project, I will also document the full development journey, every design and architecture decision; so contributors can understand how the project arrived at its current shape.**
 
 ## Our future Direction: Native AI Agent Identity
 
