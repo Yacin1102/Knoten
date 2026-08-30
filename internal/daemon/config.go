@@ -5,22 +5,23 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"strings"
 
 	"knoten/internal/protocol"
 	"knoten/internal/wg"
 )
 
-const DefaultConfigPath = "/etc/knoten/meshd.json"
+const DefaultKnotenDir = "/etc/knoten"
+
+const DefaultConfigPath = DefaultKnotenDir + "/meshd.json"
+
+const DefaultTokenPath = DefaultKnotenDir + "/token"
 
 const DefaultStatePath = "/var/lib/knoten/meshd-state.json"
 
-const DefaultWireGuardDir = "/etc/wireguard"
+const TunnelName = "knoten-wg"
 
-func defaultConfigPathFor(tunnelName string) string {
-	return path.Join(DefaultWireGuardDir, tunnelName+".conf")
-}
+const WireGuardConfigPath = "/etc/wireguard/" + TunnelName + ".conf"
 
 type StaticPeer struct {
 	Name string `json:"name,omitempty"`
@@ -35,9 +36,7 @@ type Config struct {
 	JoinToken string `json:"join_token,omitempty"`
 	TokenFile string `json:"token_file,omitempty"`
 	Name string `json:"name,omitempty"`
-	TunnelName string `json:"tunnel_name"`
 	ListenPort int `json:"listen_port"`
-	ConfigPath string `json:"config_path"`
 	StatePath string `json:"state_path"`
 	Address string `json:"address,omitempty"`
 	PersistentKeepalive int `json:"persistent_keepalive"`
@@ -49,12 +48,9 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		UseCoordinationServer: false,
-		ServerURL:             "http://127.0.0.1:8080",
-		TunnelName:            "wg0",
-		ListenPort:            wg.DefaultListenPort,
-		ConfigPath:            defaultConfigPathFor("wg0"),
-		StatePath:             DefaultStatePath,
-		PersistentKeepalive:   wg.DefaultKeepaliveSeconds,
+		ListenPort:          wg.DefaultListenPort,
+		StatePath:           DefaultStatePath,
+		PersistentKeepalive: wg.DefaultKeepaliveSeconds,
 	}
 }
 
@@ -101,28 +97,14 @@ func SaveConfig(path string, cfg Config) error {
 func (c *Config) Validate() error {
 	c.ServerURL = strings.TrimSpace(c.ServerURL)
 	c.Name = c.MachineName()
-	c.TunnelName = strings.TrimSpace(c.TunnelName)
 	c.Address = strings.TrimSpace(c.Address)
 	c.JoinToken = strings.TrimSpace(c.JoinToken)
 
-	if c.TunnelName == "" {
-		c.TunnelName = "wg0"
-	}
 	if c.ListenPort == 0 {
 		c.ListenPort = wg.DefaultListenPort
 	}
-	if c.ConfigPath == "" {
-		c.ConfigPath = defaultConfigPathFor(c.TunnelName)
-	}
 	if c.StatePath == "" {
 		c.StatePath = DefaultStatePath
-	}
-
-	if len(c.TunnelName) > 15 {
-		return fmt.Errorf("tunnel_name %q is %d characters; Linux allows at most 15", c.TunnelName, len(c.TunnelName))
-	}
-	if strings.ContainsAny(c.TunnelName, "/\\ ") {
-		return fmt.Errorf("tunnel_name %q must not contain slashes or spaces", c.TunnelName)
 	}
 
 	if err := protocol.ValidateListenPort(c.ListenPort); err != nil {
