@@ -1,6 +1,6 @@
 # Knoten - A self-hostable mesh VPN
 
-> 🟢 **Status: The first working version is available**, features, bugs are still being tested.
+> 🟢 **Status: The first working version is available**, features, bugs are still being reviewed and tested.
 
 Connect your machines (servers, cloud instances, VMs, laptops, and more) through **direct, end-to-end encrypted WireGuard tunnels**, without funneling traffic through one central point (e.g., a VPN server).
 
