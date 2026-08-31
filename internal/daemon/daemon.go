@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -19,6 +20,10 @@ const (
 	minBackoff = 1 * time.Second
 	maxBackoff = 60 * time.Second
 )
+
+// wgCommandTimeout caps a wg or wg-quick invocation. wg-quick resolves peer
+// endpoints through DNS, so it can block for a long time.
+const wgCommandTimeout = 30 * time.Second
 
 type Daemon struct {
 	cfg   Config
@@ -57,7 +62,7 @@ func (d *Daemon) Run(ctx context.Context, once bool, refresh <-chan struct{}) er
 	}
 
 	if !d.cfg.UseCoordinationServer {
-		return d.runStandalone()
+		return d.runStandalone(ctx)
 	}
 
 	return d.runCoordinated(ctx, once, refresh)
@@ -103,7 +108,7 @@ func (d *Daemon) ensureKeyPair() error {
 	return nil
 }
 
-func (d *Daemon) runStandalone() error {
+func (d *Daemon) runStandalone(ctx context.Context) error {
 	d.log.Printf("coordination server disabled — writing a static config from %d configured peer(s)", len(d.cfg.StaticPeers))
 
 	iface := wg.Interface{
@@ -125,7 +130,7 @@ func (d *Daemon) runStandalone() error {
 		})
 	}
 
-	return d.applyConfig(wg.Render(iface, peers))
+	return d.applyConfig(ctx, wg.Render(iface, peers))
 }
 
 func (d *Daemon) runCoordinated(ctx context.Context, once bool, refresh <-chan struct{}) error {
@@ -206,7 +211,7 @@ func (d *Daemon) cycle(ctx context.Context) (time.Duration, error) {
 		}
 	}
 
-	if err := d.applyConfig(d.renderFromPeers(resp.Peers)); err != nil {
+	if err := d.applyConfig(ctx, d.renderFromPeers(resp.Peers)); err != nil {
 		return 0, err
 	}
 
@@ -270,30 +275,83 @@ func (d *Daemon) renderFromPeers(peers []protocol.Peer) string {
 	return wg.Render(iface, out)
 }
 
-func (d *Daemon) applyConfig(rendered string) error {
-	if rendered == d.lastWritten {
-		return nil
-	}
+func (d *Daemon) applyConfig(ctx context.Context, rendered string) error {
+	changed := rendered != d.lastWritten
 
-	if existing, err := os.ReadFile(WireGuardConfigPath); err == nil && string(existing) == rendered {
+	if changed {
+		if err := wg.WriteAtomic(WireGuardConfigPath, rendered, 0o600); err != nil {
+			return fmt.Errorf("could not write the WireGuard config: %w", err)
+		}
 		d.lastWritten = rendered
-		return nil
+
+		peerCount := strings.Count(rendered, "[Peer]")
+		d.log.Printf("wrote %s (%d peer(s))", WireGuardConfigPath, peerCount)
 	}
 
-	if err := wg.WriteAtomic(WireGuardConfigPath, rendered, 0o600); err != nil {
-		return fmt.Errorf("could not write the WireGuard config: %w", err)
+	if err := d.applyTunnel(ctx, changed); err != nil {
+		d.log.Printf("WARNING: the config is written, but the tunnel was not updated: %v", err)
+		d.log.Printf("         if the tunnel is down: sudo wg-quick up %s", TunnelName)
+		d.log.Printf("         if it is already up:   sudo bash -c 'wg syncconf %s <(wg-quick strip %s)'", TunnelName, TunnelName)
 	}
-	d.lastWritten = rendered
-
-	peerCount := strings.Count(rendered, "[Peer]")
-	d.log.Printf("wrote %s (%d peer(s))", WireGuardConfigPath, peerCount)
-
-	d.log.Printf("to apply it: sudo wg syncconf %s <(wg-quick strip %s)   # if the tunnel is already up",
-		TunnelName, TunnelName)
-	d.log.Printf("         or: sudo wg-quick up %s                        # if it is not",
-		TunnelName)
 
 	return nil
+}
+
+// applyTunnel brings the tunnel up if it is down, or pushes the new peers into the
+// running interface if the config changed. Syncing does not drop the interface, so
+// connections through the tunnel survive a peer list change.
+
+// Temporary: this shells out to wireguard-tools. We will later replace it with wgctrl.
+func (d *Daemon) applyTunnel(ctx context.Context, changed bool) error {
+	if _, err := runWG(ctx, "wg", "show", TunnelName); err != nil {
+		if _, err := runWG(ctx, "wg-quick", "up", TunnelName); err != nil {
+			return err
+		}
+
+		d.log.Printf("brought %s up", TunnelName)
+		return nil
+	}
+
+	if !changed {
+		return nil
+	}
+
+	// `wg syncconf` rejects the wg-quick-only keys (Address, DNS, MTU), so feed it the stripped form of the file we just wrote.
+	stripped, err := runWG(ctx, "wg-quick", "strip", TunnelName)
+	if err != nil {
+		return err
+	}
+
+	tmp := WireGuardConfigPath + ".sync"
+	if err := wg.WriteAtomic(tmp, stripped, 0o600); err != nil {
+		return err
+	}
+	defer os.Remove(tmp)
+
+	if _, err := runWG(ctx, "wg", "syncconf", TunnelName, tmp); err != nil {
+		return err
+	}
+
+	d.log.Printf("synced %s", TunnelName)
+	return nil
+}
+
+// runWG runs a wireguard-tools command and returns its standard output.
+func runWG(ctx context.Context, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, wgCommandTimeout)
+	defer cancel()
+
+	var stdout, stderr strings.Builder
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("%s %s: %w: %s",name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+
+	return stdout.String(), nil
 }
 
 func sleepOrCancel(ctx context.Context, d time.Duration, refresh <-chan struct{}) bool {
