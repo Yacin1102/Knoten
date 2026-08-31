@@ -95,55 +95,13 @@ sudo pacman -S wireguard-tools
 
 ## Quick start
 
+Prebuilt Linux binaries are attached to each [release](https://github.com/Yacin1102/Knoten/releases). 
+
 ### Coordinated mode
 
 This walks through **coordinated mode**: one coordination server plus a fleet of nodes. Skip to [Standalone mode](#standalone-mode) if every node already has a static IP.
 
-#### 1. Download the latest version
-
-Prebuilt Linux binaries are attached to each [release](https://github.com/Yacin1102/Knoten/releases). Grab `coordserver` and `meshd` and put them on your `PATH`:
-
-```bash
-VERSION=v0.2.0-alpha
-
-curl -LO https://github.com/Yacin1102/Knoten/releases/download/$VERSION/coordserver-linux-amd64
-curl -LO https://github.com/Yacin1102/Knoten/releases/download/$VERSION/meshd-linux-amd64
-
-chmod +x coordserver-linux-amd64 meshd-linux-amd64
-sudo install -m 0755 coordserver-linux-amd64 /usr/local/bin/coordserver
-sudo install -m 0755 meshd-linux-amd64       /usr/local/bin/meshd
-```
-
-`coordserver` is only needed on the coordination server; `meshd` goes on every node.
-
-Check it worked:
-
-```bash
-meshd -h
-```
-
-<details>
-<summary>Or build from source</summary>
-
-Requires **Go 1.26 or newer**. There is no cgo, so no C toolchain is needed.
-
-```bash
-git clone https://github.com/Yacin1102/Knoten.git
-cd Knoten
-
-go build -o bin/coordserver ./cmd/coordserver
-go build -o bin/meshd       ./cmd/meshd
-```
-
-Cross-compiling for a Linux server from another machine works the same way:
-
-```bash
-GOOS=linux GOARCH=amd64 go build -o bin/coordserver ./cmd/coordserver
-```
-
-</details>
-
-#### 2. Start the coordination server
+#### 1. Start the coordination server
 
 Generate a join token first. Every machine must present it to enrol.
 
