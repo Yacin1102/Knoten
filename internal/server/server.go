@@ -200,7 +200,7 @@ func (s *Server) writeStoreError(w http.ResponseWriter, r *http.Request, err err
 
 	case errors.Is(err, store.ErrPoolExhausted):
 		writeError(w, http.StatusInsufficientStorage,
-			"the coordination server has no free VPN addresses left; restart it with a larger -cidr range")
+			"the coordination server has no free VPN addresses left in "+store.VPNRange)
 
 	default:
 		s.cfg.Logger.Printf("database error on %s %s: %v", r.Method, r.URL.Path, err)

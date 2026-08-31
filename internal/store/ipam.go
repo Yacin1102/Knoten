@@ -8,6 +8,16 @@ import (
 
 var ErrPoolExhausted = errors.New("no free VPN addresses left in the configured range")
 
+// VPNRange is the address range machines are given addresses from.
+//
+// This is deliberately not configurable. The range is only ever consulted by
+// NextFreeIP, which runs once per machine, when a public key is first seen; the
+// address it returns is then stored in the database and never recomputed. So
+// changing the range does not move machines that are already enrolled — it only
+// affects machines that join afterwards, silently splitting the mesh across two
+// ranges. Making it settable again needs a re-IP migration that does not exist yet.
+const VPNRange = "10.10.0.0/16"
+
 const reservedHostSuffix = 1
 
 func NextFreeIP(cidr *net.IPNet, used map[string]bool) (string, error) {
@@ -60,7 +70,7 @@ func ParseCIDR(s string) (*net.IPNet, error) {
 	_, network, err := net.ParseCIDR(s)
 
 	if err != nil {
-		return nil, fmt.Errorf("%q is not a valid CIDR range like 10.42.0.0/16: %w", s, err)
+		return nil, fmt.Errorf("%q is not a valid CIDR range like 10.10.0.0/16: %w", s, err)
 	}
 
 	if network.IP.To4() == nil {

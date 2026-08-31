@@ -23,8 +23,6 @@ func main() {
 
 	dbPath := flag.String("db", "/var/lib/knoten/coord.db","path to the SQLite database file; it is created if missing")
 
-	cidrFlag := flag.String("cidr", "10.42.0.0/16","the private address range to hand out to machines, e.g. 10.42.0.0/16")
-
 	tokenFlag := flag.String("token", "","shared join token (INSECURE: visible in `ps`; prefer -token-file)")
 
 	tokenFile := flag.String("token-file", "","path to a file containing the shared join token (recommended over -token)")
@@ -39,9 +37,9 @@ func main() {
 
 	logger := log.New(os.Stderr, "coordserver: ", log.LstdFlags)
 	
-	cidr, err := store.ParseCIDR(*cidrFlag)
+	cidr, err := store.ParseCIDR(store.VPNRange)
 	if err != nil {
-		fatalf(logger, "invalid -cidr: %v", err)
+		fatalf(logger, "the built-in VPN range %q is not usable: %v", store.VPNRange, err)
 	}
 
 	if *peerTimeout <= *syncInterval {
