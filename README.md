@@ -1,8 +1,4 @@
-<h1 align="center">Knoten</h1>
-
-<p align="center">
-  <strong>A self-hostable mesh VPN</strong>
-</p>
+![[Knoten_README_banner.png]]
 
 <p align="center">
   <a href="#license"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
@@ -19,11 +15,12 @@ Knoten connects your machines (servers, cloud instances, VMs, laptops) over **di
 
 A coordination server may exist, but it only handles **discovery, identity, and address assignment**. It never carries your data.
 
-{A demo gif will be inserted here}
+{A demo GIF will be inserted here}
 
 > 🟢 Status: **Alpha**: latest version `v0.2.0-alpha`
 >
-> **Knoten is still in its alpha phase.** The first working version runs: a coordination server, a node daemon, automatic key generation, IP address management, and live tunnel updates. **This is a student-driven project under active development**, command-line flags, the HTTP API, and on-disk formats may still change between versions, without a compatibility guarantee. Not yet recommended for production.
+> **Knoten is still in its alpha phase.** The first working version runs: a coordination server, a node daemon, automatic key generation, IP address management, and live tunnel updates. 
+> **This is a student-driven project under active development**. Command-line flags, the HTTP API, and on-disk formats may still change between versions, without a compatibility guarantee. Not yet recommended for production.
 
 ## Contents
 
@@ -49,13 +46,13 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 
 **Access is a lease, never a possession.** Every grant is designed to carry an expiry and persist only through renewal. Revocation is simply expiry-now, so removing access is never a special operation, and abandoned access decays to nothing on its own. *(Design principle; the lease mechanism itself is on the [roadmap](#roadmap).)*
 
-**Small and genuinely self-hostable.** Two static Go binaries and one SQLite file. The SQLite driver is pure Go, so builds need no cgo and no C toolchain.
+**Small and genuinely self-hostable.** Two static Go binaries and one SQLite file. **You can even run the coordserver and meshd binaries on the same machine.**
 
 **No lock-in.** If you stop the daemon, the tunnel it produced keeps working.
 
 ## How it works
 
-{A diagram will be inserted here}
+![[Simplified_architecture.png]]
 
 On each machine, `meshd`:
 
@@ -65,7 +62,7 @@ On each machine, `meshd`:
 4. **Renders `/etc/wireguard/knoten-wg.conf`** atomically, then applies it: `wg-quick up` if the tunnel is down, or `wg syncconf` if it is already running. Syncing does **not** drop the interface, so connections through the tunnel survive a peer-list change.
 5. **Steps back.** All actual traffic flows peer to peer, encrypted end to end by WireGuard.
 
-If the coordination server becomes unreachable, `meshd` retries with exponential backoff (1s to 60s, with jitter) while the existing tunnel keeps running untouched.
+**If the coordination server becomes unreachable, `meshd` retries with exponential backoff (1s to 60s, with jitter) while the existing tunnel keeps running untouched.**
 
 ## Deployment modes
 
@@ -103,7 +100,7 @@ This walks through **coordinated mode**: one coordination server plus a fleet of
 
 #### 1. Start the coordination server
 
-Generate a join token first. Every machine must present it to enrol.
+Generate a join token first. Every machine must present it to enrol. (Skip if you don't want a join token)
 
 ```bash
 sudo mkdir -p /etc/knoten
@@ -115,13 +112,18 @@ Create the database directory:
 ```bash
 sudo mkdir /var/lib/knoten
 ```
+
+Give the binary the right permissions:
+```bash
+chmod +x ./coordserver
+```
 Then start the server:
 
 ```bash
-sudo coordserver \
+sudo ./coordserver \
   -listen :8080 \
   -db /var/lib/knoten/coord.db \
-  -token-file /etc/knoten/token
+  -token-file /etc/knoten/token #skip if you didn't generate one
 ```
 
 It should show something like this:
@@ -138,12 +140,15 @@ The database file and its directory are created if missing. Open TCP **8080** on
 
 > ⚠️ `coordserver` speaks **plain HTTP** and has no TLS of its own. Put it behind a reverse proxy that terminates TLS before exposing it to the internet. (*Native HTTPS support is planned for a future version.*) See [Security model](#security-model).
 
-#### 3. Join your first machine
-
+#### 2. Join your first machine
+Give the binary the right permissions:
+```bash
+chmod +x ./meshd
+```
 Run interactive setup on the node:
 
 ```bash
-sudo meshd -setup
+sudo ./meshd -setup
 ```
 
 Setup asks a short list of questions and writes `/etc/knoten/meshd.json`:
@@ -152,7 +157,7 @@ Setup asks a short list of questions and writes `/etc/knoten/meshd.json`:
 ListenPort (default 51820):
 Use a coordination server? (y/N): y
 Coordination server URL (e.g. https://coord.example.com:8443): http://<server IP>:8080
-Join token (leave empty if the server does not require one): <paste the token from step 2>
+Join token (leave empty if the server does not require one): <paste the token from step 2 if you generated one>
 Name for this machine (leave empty for "Hostname-01"):
 ```
 
@@ -281,19 +286,19 @@ The interface is always named `knoten-wg`.
 
 As a student, I am constantly learning while building Knoten. This is the project's planned roadmap.
 
-| Stage  | What we’ll be building                     | Progress |
-| ------ | ------------------------------------------ | -------- |
-| **0**  | Initial setup                              | ✅        |
-| **1**  | Manual WireGuard configuration             | ✅        |
-| **2**  | WireGuard config generator \| v0.1         | ✅        |
-| **3**  | Coordination server \| v0.2.0-alpha        | ✅        |
-| **4**  | wgctrl \| v0.2.1                           | ⚒️       |
-| **5**  | Security, features and stability \| v0.2.2 | ⚒️       |
-| **6**  | NAT support                                | -        |
-| **7**  | Redundant control-plane coordination       | -        |
-| **8**  | Identity & access management               | -        |
-| **9**  | Management console (UI)                    | -        |
-| **10** | Hardening                                  | -        |
+| Stage  | What we’ll be building                                              | Progress |
+| ------ | ------------------------------------------------------------------- | -------- |
+| **0**  | Initial setup                                                       | ✅        |
+| **1**  | Manual WireGuard configuration                                      | ✅        |
+| **2**  | WireGuard config generator \| v0.1                                  | ✅        |
+| **3**  | Coordination server \| v0.2.0-alpha                                 | ✅        |
+| **4**  | wgctrl \| v0.2.1                                                    | ⚒️       |
+| **5**  | Security, features and stability \| v0.2.2                          | ⚒️       |
+| **6**  | NAT support                                                         | -        |
+| **7**  | Redundant control-plane coordination<br>(Many coordination servers) | -        |
+| **8**  | Identity & access management                                        | -        |
+| **9**  | Management console (UI)                                             | -        |
+| **10** | Hardening                                                           | -        |
 
 Some work carried by those stages:
 
