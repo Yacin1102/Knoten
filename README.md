@@ -17,12 +17,14 @@ Knoten connects your machines (servers, cloud instances, VMs, laptops) over **di
 
 A coordination server may exist, but it only handles **discovery, identity, and address assignment**. It never carries your data.
 
-{A demo GIF will be inserted here}
+<video src="./assets/Knoten_demo.mp4" controls width="100%"></video>
 
 > 🟢 Status: **Alpha**: latest version `v0.2.0-alpha`
 >
 > **Knoten is still in its alpha phase.** The first working version runs: a coordination server, a node daemon, automatic key generation, IP address management, and live tunnel updates. 
 > **This is a student-driven project under active development**. Command-line flags, the HTTP API, and on-disk formats may still change between versions, without a compatibility guarantee. Not yet recommended for production.
+
+> **NAT Support**: Knoten does not currently support nodes behind Network Address Translation (NAT). All nodes must have directly reachable IP addresses, whether static or dynamic.
 
 ## Contents
 
@@ -125,8 +127,6 @@ Then start the server:
 
 ```bash
 sudo ./coordserver \
-  -listen :8080 \
-  -db /var/lib/knoten/coord.db \
   -token-file /etc/knoten/token #skip if you didn't generate one
 ```
 
