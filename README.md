@@ -1,4 +1,6 @@
-![[Knoten_README_banner.png]]
+<p align="center">
+  <img src="./assets/Knoten_README_banner.png" alt="Knoten Banner" width="100%">
+</p>
 
 <p align="center">
   <a href="#license"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
@@ -52,7 +54,9 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 
 ## How it works
 
-![[Simplified_architecture.png]]
+<p align="center">
+  <img src="./assets/Simplified_architecture.png" alt="Knoten Architecture Diagram">
+</p>
 
 On each machine, `meshd`:
 
