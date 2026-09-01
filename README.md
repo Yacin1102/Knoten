@@ -111,6 +111,10 @@ openssl rand -base64 32 | sudo tee /etc/knoten/token > /dev/null
 sudo chmod 600 /etc/knoten/token
 ```
 
+Create the database directory:
+```bash
+sudo mkdir /var/lib/knoten
+```
 Then start the server:
 
 ```bash
