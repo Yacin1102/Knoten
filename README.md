@@ -18,7 +18,7 @@ Knoten connects your machines (servers, cloud instances, VMs, laptops) over **di
 A coordination server may exist, but it only handles **discovery, identity, and address assignment**. It never carries your data.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/3f00c8da-bcd0-40d4-adfb-e3051bb2129d" autoplay loop muted playsinline width="100%"></video>
+  <img src="./assets/Knoten_demo.gif" alt="Knoten Architecture Diagram">
 </p>
 
 > 🟢 Status: **Alpha**: latest version `v0.2.0-alpha`
