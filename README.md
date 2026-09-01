@@ -18,7 +18,7 @@ Knoten connects your machines (servers, cloud instances, VMs, laptops) over **di
 A coordination server may exist, but it only handles **discovery, identity, and address assignment**. It never carries your data.
 
 <p align="center">
-  <img src="./assets/Knoten_demo.gif" alt="Knoten Architecture Diagram">
+  <img src="./assets/Knoten_demo.gif" alt="Knoten_demo.gif">
 </p>
 
 > 🟢 Status: **Alpha**: latest version `v0.2.0-alpha`
@@ -171,9 +171,9 @@ Setup stores the token you paste inline in `meshd.json`, as `join_token`. To kee
 
 ```json
 {
-"use_coordination_server": true,
-"server_url": "http://198.51.100.10:8080",
-"token_file": "/etc/knoten/token"
+  "use_coordination_server": true,
+  "server_url": "http://198.51.100.10:8080",
+  "token_file": "/etc/knoten/token"
 }
 ```
 
@@ -199,16 +199,16 @@ sudo meshd
 
 > You can run it in the background, or install it as a systemd service.
 
-#### 4. Join the rest of the fleet
+#### 3. Join the rest of the fleet
 
-Repeat step 3 on every other machine. Each one gets its own key and its own address, and within one sync interval (30s by default) every node sees every other node:
+Repeat step 2 on every other machine. Each one gets its own key and its own address, and within one sync interval (30s by default) every node sees every other node:
 
 ```
 meshd: wrote /etc/wireguard/knoten-wg.conf (2 peer(s))
 meshd: synced knoten-wg
 ```
 
-#### 5. Verify
+#### 4. Verify
 
 ```bash
 # What does the control plane think?
