@@ -20,6 +20,8 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 <p align="center">
   <img src="./assets/Knoten_demo.gif" alt="Knoten_demo.gif">
 </p>
+>⏸️ **Temporarily on hold due to university commitments and life responsibilities. Back soon!**
+
 
 > 🟢 Status: **Alpha**: latest version `v0.2.0-alpha`
 >
