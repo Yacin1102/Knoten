@@ -21,15 +21,18 @@ A coordination server may exist, but it only handles **discovery, identity, and 
   <img src="./assets/Knoten_demo.gif" alt="Knoten_demo.gif">
 </p>
 
-> [!INFO] Ongoing development
+> [!NOTE]
+> **Ongoing development**
 > Optimizing background network (Wgctrl implementation) and building proper documentation.
 
-> [!Note] Status: **Alpha** (latest version `v0.2.0-alpha`)
+> [!NOTE]
+> Status: **Alpha** (latest version `v0.2.0-alpha`)
 >
 > **Knoten is still in its alpha phase.** The first working version runs: a coordination server, a node daemon, automatic key generation, IP address management, and live tunnel updates. 
 > **This is a student-driven project under active development**. Command-line flags, the HTTP API, and on-disk formats may still change between versions, without a compatibility guarantee. Not yet recommended for production.
 
-> [!Warning] **NAT Support** 
+> [!IMPORTANT]
+> **NAT Support** 
 > Knoten does not currently support nodes behind Network Address Translation (NAT). All nodes must have directly reachable IP addresses, whether static or dynamic.
 
 ## Contents
