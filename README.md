@@ -32,8 +32,7 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 > **This is a student-driven project under active development**. Command-line flags, the HTTP API, and on-disk formats may still change between versions, without a compatibility guarantee. Not yet recommended for production.
 
 > [!IMPORTANT]
-> **NAT Support** 
-> Knoten does not currently support nodes behind Network Address Translation (NAT). All nodes must have directly reachable IP addresses, whether static or dynamic.
+> **Knoten does not currently support nodes behind Network Address Translation (NAT)**. All nodes must have directly reachable IP addresses, whether static or dynamic.
 
 ## Contents
 
@@ -290,14 +289,14 @@ The interface is always named `knoten-wg`.
 
 **What it does not protect yet**
 
-- **No TLS.** `coordserver` serves plain HTTP. Terminate TLS in front of it (nginx, Caddy, Traefik) before exposing it publicly, and set `-trust-proxy` only when your proxy overwrites `X-Forwarded-For`.
-- **One shared token for the whole fleet.** Any machine holding it can enrol and read the peer list. There is no per-machine credential and no revocation yet. See the [roadmap](#roadmap).
+- **No TLS.** `coordserver` serves plain HTTP. Terminate TLS in front of it (nginx, Caddy, Traffic) before exposing it publicly, and set `-trust-proxy` only when your proxy overwrites `X-Forwarded-For`.
+- **One shared token for the whole fleet.** Any machine holding it can enroll and read the peer list. There is no per-machine credential and no revocation yet. See the [roadmap](#roadmap).
 - **No NAT traversal.** Endpoints come from whatever address the server observed. Peers behind symmetric NAT with no port forwarding may not reach each other directly, and there is no relay fallback yet.
 - **No admin surface yet.** Removing a machine means deleting its row from the SQLite database by hand.
 
 ## Roadmap
 
-As a student, I am constantly learning while building Knoten. This is the project's planned roadmap.
+As a student, I am constantly learning while building Knoten. This is the project's planned roadmap:
 
 | Stage  | What we’ll be building                                              | Progress |
 | ------ | ------------------------------------------------------------------- | -------- |
@@ -307,11 +306,12 @@ As a student, I am constantly learning while building Knoten. This is the projec
 | **3**  | Coordination server \| v0.2.0-alpha                                 | ✅        |
 | **4**  | wgctrl \| v0.2.1                                                    | ⚒️       |
 | **5**  | Security, features and stability \| v0.2.2                          | ⚒️       |
-| **6**  | NAT support                                                         | -        |
-| **7**  | Redundant control-plane coordination<br>(Many coordination servers) | -        |
-| **8**  | Identity & access management                                        | -        |
-| **9**  | Management console (UI)                                             | -        |
-| **10** | Hardening                                                           | -        |
+| **6**  | Relay                                                               | -        |
+| **7**  | NAT support                                                         | -        |
+| **8**  | Redundant control-plane coordination<br>(Many coordination servers) | -        |
+| **9**  | Identity & access management                                        | -        |
+| **10** | Management console (UI)                                             | -        |
+| **11** | Hardening                                                           | -        |
 
 Some work carried by those stages:
 

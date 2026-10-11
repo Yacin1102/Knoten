@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"time"
 	_ "modernc.org/sqlite"
 )
@@ -24,7 +24,7 @@ var ErrNotFound = errors.New("machine not found")
 
 type Store struct {
 	db   *sql.DB
-	cidr *net.IPNet
+	cidr *netip.Prefix
 }
 
 const schema = `
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS machines (
 CREATE INDEX IF NOT EXISTS idx_machines_last_seen ON machines(last_seen);
 `
 
-func Open(path string, cidr *net.IPNet) (*Store, error) {
+func Open(path string, cidr *netip.Prefix) (*Store, error) {
 	if cidr == nil {
 		return nil, errors.New("store.Open needs an address range")
 	}
@@ -165,8 +165,9 @@ func (s *Store) RegisterMachine(ctx context.Context, in Machine) (Machine, error
 	if err := rows.Close(); err != nil {
 		return Machine{}, fmt.Errorf("could not finish reading the addresses: %w", err)
 	}
+	reserved := ReservedIPs(s.cidr)
 
-	vpnIP, err := NextFreeIP(s.cidr, used)
+	vpnIP, err := NextFreeIP(s.cidr, used, reserved)
 	if err != nil {
 		return Machine{}, err
 	}

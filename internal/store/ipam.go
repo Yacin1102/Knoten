@@ -3,53 +3,56 @@ package store
 import (
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 )
 
 var ErrPoolExhausted = errors.New("no free VPN addresses left in the configured range")
 
 // VPNRange is the address range machines are given addresses from.
 //
-// This is deliberately not configurable. The range is only ever consulted by
+// This is deliberately not configurable. The range is only ever consulted by 
 // NextFreeIP, which runs once per machine, when a public key is first seen; the
 // address it returns is then stored in the database and never recomputed. So
-// changing the range does not move machines that are already enrolled — it only
+// changing the range does not move machines that are already enrolled so it only
 // affects machines that join afterwards, silently splitting the mesh across two
 // ranges. Making it settable again needs a re-IP migration that does not exist yet.
 const VPNRange = "10.10.0.0/16"
 
-const reservedHostSuffix = 1
+// reservedHosts is how many addresses at the start of the range are never handed out to machines.
+const reservedHosts = 2
 
-func NextFreeIP(cidr *net.IPNet, used map[string]bool) (string, error) {
+// ReservedIPs returns the addresses in cidr that must never be handed out.
+func ReservedIPs(cidr *netip.Prefix) map[string]bool {
+	reserved := make(map[string]bool, reservedHosts)
+
+	addr := cidr.Addr().Next() // first host address
+	for i := 0; i < reservedHosts; i++ {
+		reserved[addr.String()] = true
+		addr = addr.Next()
+	}
+
+	return reserved
+}
+
+// NextFreeIP returns the next free IP address in the given range that is not in use or reserved.
+func NextFreeIP(cidr *netip.Prefix, used map[string]bool, reserved map[string]bool) (string, error) {
+
+	// Validate the prefix
 	if cidr == nil {
 		return "", errors.New("no address range configured")
 	}
 
-	base := cidr.IP.To4()
+	addr := cidr.Addr()
 
-	if base == nil {
+	// Ensure we are working with an IPv4 address
+	if !addr.Is4() {
 		return "", fmt.Errorf("%s is not an IPv4 range (IPv6 is not supported yet)", cidr.String())
 	}
 
-	mask := net.IP(cidr.Mask).To4()
-	
-	if mask == nil {
-		return "", fmt.Errorf("%s does not have a usable IPv4 mask", cidr.String())
-	}
-
-	network := ipToUint32(base) & ipToUint32(mask) 
-
-	broadcast := network | ^ipToUint32(mask)
-
-	for candidate := network + 1; candidate < broadcast; candidate++ {
-		
-		if candidate == network+reservedHostSuffix {
-			continue
-		}
-
-		ip := uint32ToIP(candidate).String()
-
-		if !used[ip] {
+	// Iterate over the range to find the next free IP
+	for candidate := cidr.Addr().Next(); cidr.Contains(candidate.Next()); candidate = candidate.Next() {
+		ip := candidate.String()
+		if !used[ip] && !reserved[ip] {
 			return ip, nil
 		}
 	}
@@ -57,31 +60,22 @@ func NextFreeIP(cidr *net.IPNet, used map[string]bool) (string, error) {
 	return "", ErrPoolExhausted
 }
 
-func ipToUint32(ip net.IP) uint32 {
-	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
-}
-
-func uint32ToIP(n uint32) net.IP {
-	return net.IPv4(byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
-}
-
-func ParseCIDR(s string) (*net.IPNet, error) {
-
-	_, network, err := net.ParseCIDR(s)
-
+// ParseCIDR parses s as an IPv4 CIDR range that is large enough to hold a mesh.
+func ParseCIDR(s string) (*netip.Prefix, error) {
+	prefix, err := netip.ParsePrefix(s)
 	if err != nil {
 		return nil, fmt.Errorf("%q is not a valid CIDR range like 10.10.0.0/16: %w", s, err)
 	}
 
-	if network.IP.To4() == nil {
+	if !prefix.Addr().Is4() {
 		return nil, fmt.Errorf("%q is an IPv6 range; only IPv4 is supported today", s)
 	}
 
-	ones, bits := network.Mask.Size()
-
-	if bits-ones < 3 {
+	if prefix.Bits() > 29 {
 		return nil, fmt.Errorf("range %q is too small: it must be /29 or larger to hold a useful mesh", s)
 	}
 
-	return network, nil
+	prefix = prefix.Masked()
+
+	return &prefix, nil
 }

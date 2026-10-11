@@ -21,8 +21,7 @@ const (
 	maxBackoff = 60 * time.Second
 )
 
-// wgCommandTimeout caps a wg or wg-quick invocation. wg-quick resolves peer
-// endpoints through DNS, so it can block for a long time.
+// wgCommandTimeout caps a wg or wg-quick invocation. wg-quick resolves peer endpoints through DNS, so it can block for a long time.
 const wgCommandTimeout = 30 * time.Second
 
 type Daemon struct {
