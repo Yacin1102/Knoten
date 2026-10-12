@@ -165,9 +165,8 @@ func (s *Store) RegisterMachine(ctx context.Context, in Machine) (Machine, error
 	if err := rows.Close(); err != nil {
 		return Machine{}, fmt.Errorf("could not finish reading the addresses: %w", err)
 	}
-	reserved := ReservedIPs(s.cidr)
 
-	vpnIP, err := NextFreeIP(s.cidr, used, reserved)
+	vpnIP, err := NextFreeIP(s.cidr, used)
 	if err != nil {
 		return Machine{}, err
 	}

@@ -35,12 +35,14 @@ func ReservedIPs(cidr *netip.Prefix) map[string]bool {
 }
 
 // NextFreeIP returns the next free IP address in the given range that is not in use or reserved.
-func NextFreeIP(cidr *netip.Prefix, used map[string]bool, reserved map[string]bool) (string, error) {
+func NextFreeIP(cidr *netip.Prefix, used map[string]bool) (string, error) {
 
 	// Validate the prefix
 	if cidr == nil {
 		return "", errors.New("no address range configured")
 	}
+
+	reserved := ReservedIPs(cidr)
 
 	addr := cidr.Addr()
 
