@@ -1,39 +1,26 @@
 package wg
 
 import (
-	"crypto/ecdh"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
+const KeyLen = 32 // wgh.KeyLen
+
+type Key [KeyLen]byte
+
 type KeyPair struct {
-	PrivateKey string
-	PublicKey string
+	PrivateKey wgtypes.Key
+	PublicKey wgtypes.Key
 }
 
+// GenerateKeyPair generates a new WireGuard key pair and fills the provided KeyPair struct with the generated keys.
 func GenerateKeyPair() (KeyPair, error) {
-	privKey, err := ecdh.X25519().GenerateKey(rand.Reader)
+	privateKey, err := wgtypes.GeneratePrivateKey()
 	if err != nil {
-		return KeyPair{}, fmt.Errorf("could not generate X25519 key: %w", err)
+		return KeyPair{}, fmt.Errorf("could not generate private key: %w", err)
 	}
-
-	privateKey := base64.StdEncoding.EncodeToString(privKey.Bytes())
-	publicKey := base64.StdEncoding.EncodeToString(privKey.PublicKey().Bytes())
+	publicKey := privateKey.PublicKey()
 
 	return KeyPair{PrivateKey: privateKey, PublicKey: publicKey}, nil
-}
-
-func PublicKeyFrom(privateKeyBase64 string) (string, error) {
-	raw, err := base64.StdEncoding.DecodeString(privateKeyBase64)
-	if err != nil {
-		return "", fmt.Errorf("private key is not valid base64: %w", err)
-	}
-
-	privKey, err := ecdh.X25519().NewPrivateKey(raw)
-	if err != nil {
-		return "", fmt.Errorf("private key is not a valid X25519 key: %w", err)
-	}
-
-	return base64.StdEncoding.EncodeToString(privKey.PublicKey().Bytes()), nil
 }

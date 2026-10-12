@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
 	"knoten/internal/client"
 	"knoten/internal/protocol"
@@ -74,15 +75,15 @@ func (d *Daemon) ensureKeyPair() error {
 	}
 
 	if st.PrivateKey == "" {
-		d.log.Printf("no key found at %s — generating a new identity for this machine", d.cfg.StatePath)
+		d.log.Printf("no key found at %s... generating a new identity for this machine", d.cfg.StatePath)
 
 		kp, err := wg.GenerateKeyPair()
 		if err != nil {
 			return fmt.Errorf("could not generate a key pair: %w", err)
 		}
 
-		st.PrivateKey = kp.PrivateKey
-		st.PublicKey = kp.PublicKey
+		st.PrivateKey = kp.PrivateKey.String()
+		st.PublicKey = kp.PublicKey.String()
 
 		if err := SaveState(d.cfg.StatePath, st); err != nil {
 			return fmt.Errorf("could not save the new key: %w", err)
@@ -90,10 +91,11 @@ func (d *Daemon) ensureKeyPair() error {
 
 		d.log.Printf("generated key pair; this machine's PUBLIC key is: %s", kp.PublicKey)
 	} else {
-		pub, err := wg.PublicKeyFrom(st.PrivateKey)
+		prv, err := wgtypes.ParseKey(st.PrivateKey)
 		if err != nil {
 			return fmt.Errorf("the private key in %s is unusable: %w", d.cfg.StatePath, err)
 		}
+		pub := prv.PublicKey().String()
 
 		if st.PublicKey != pub {
 			st.PublicKey = pub
