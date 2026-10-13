@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -34,7 +35,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	endpoint := joinHostPort(observedIP(r, s.cfg.TrustProxy), req.ListenPort)
+	endpoint := net.JoinHostPort(
+		observedIP(r, s.cfg.TrustProxy),
+		strconv.Itoa(req.ListenPort),
+	)
 
 	ctx, cancel := requestContext(r)
 	defer cancel()
@@ -80,7 +84,10 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	endpoint := joinHostPort(observedIP(r, s.cfg.TrustProxy), req.ListenPort)
+	endpoint := net.JoinHostPort(
+		observedIP(r, s.cfg.TrustProxy),
+		strconv.Itoa(req.ListenPort),
+	)
 
 	aliveSince := time.Now().Add(-s.cfg.PeerTimeout)
 
@@ -147,22 +154,6 @@ func toProtocolPeers(machines []store.Machine) []protocol.Peer {
 		out = append(out, toProtocolPeer(m))
 	}
 	return out
-}
-
-func joinHostPort(ip string, port int) string {
-	if containsColon(ip) {
-		return "[" + ip + "]:" + strconv.Itoa(port)
-	}
-	return ip + ":" + strconv.Itoa(port)
-}
-
-func containsColon(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] == ':' {
-			return true
-		}
-	}
-	return false
 }
 
 func shortKey(k string) string {

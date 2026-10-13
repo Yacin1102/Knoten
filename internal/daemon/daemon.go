@@ -302,7 +302,7 @@ func (d *Daemon) applyConfig(ctx context.Context, rendered string) error {
 // running interface if the config changed. Syncing does not drop the interface, so
 // connections through the tunnel survive a peer list change.
 
-// Temporary: this shells out to wireguard-tools. We will later replace it with wgctrl.
+// Temporary: this shells out to wireguard-tools. We will later replace it with wgctrl / netlink probably.
 func (d *Daemon) applyTunnel(ctx context.Context, changed bool) error {
 	if _, err := runWG(ctx, "wg", "show", TunnelName); err != nil {
 		if _, err := runWG(ctx, "wg-quick", "up", TunnelName); err != nil {
@@ -385,6 +385,7 @@ func (d *Daemon) nextBackoff() time.Duration {
 	return current + jitter
 }
 
+// addressWithPrefix returns the given IP with the prefix length from the CIDR. If the CIDR is empty, it returns a /32 prefix.
 func addressWithPrefix(ip, cidr string) string {
 	if ip == "" {
 		return ""

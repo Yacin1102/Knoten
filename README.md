@@ -23,13 +23,13 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 
 > [!NOTE]
 > **Ongoing development**
-> Optimizing background network (Wgctrl implementation) and building proper documentation.
+> Optimizing background network (Wgctrl implementation, etc.) and building proper documentation.
 
 > [!NOTE]
 > Status: **Alpha** (latest version `v0.2.0-alpha`)
 >
 > **Knoten is still in its alpha phase.** The first working version runs: a coordination server, a node daemon, automatic key generation, IP address management, and live tunnel updates. 
-> **This is a student-driven project under active development**. Command-line flags, the HTTP API, and on-disk formats may still change between versions, without a compatibility guarantee. Not yet recommended for production.
+> **This is a student-driven project under active development**. Command-line flags, the HTTP API, and on-disk formats may still change between versions, without a compatibility guarantee.
 
 > [!IMPORTANT]
 > **Knoten does not currently support nodes behind Network Address Translation (NAT)**. All nodes must have directly reachable IP addresses, whether static or dynamic.
@@ -70,7 +70,7 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 
 On each machine, `meshd`:
 
-1. **Generates an identity** on first run: an X25519 keypair created locally with Go's standard library. The private key is written to a `0600` state file and never leaves the machine.
+1. **Generates an identity** on first run: a keypair is created locally. The private key is written to a `0600` state file and never leaves the machine.
 2. **Registers** with the coordination server, which assigns it a stable VPN address out of `10.10.0.0/16` and records the public endpoint it was seen from.
 3. **Polls `/v1/sync`** on an interval the server dictates to the whole fleet, receiving the list of peers that have checked in recently.
 4. **Renders `/etc/wireguard/knoten-wg.conf`** atomically, then applies it: `wg-quick up` if the tunnel is down, or `wg syncconf` if it is already running. Syncing does **not** drop the interface, so connections through the tunnel survive a peer-list change.
@@ -80,10 +80,10 @@ On each machine, `meshd`:
 
 ## Deployment modes
 
-| Mode | When to use it | What you run |
-| --- | --- | --- |
-| **Standalone** | Every node has a static, reachable IP address, and you are happy to list peers yourself. Pure peer-to-peer, no control plane at all. | `meshd` on each node, with a `static_peers` list in its config. |
-| **Coordinated** | Peers sit behind NAT or have changing IPs, or you want identity and permissions managed centrally. | `coordserver` on one reachable host, `meshd` on every node. A static node can do both jobs. |
+| Mode            | When to use it                                                                                                                       | What you run                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| **Standalone**  | Every node has a static, reachable IP address, and you are happy to list peers yourself. Pure peer-to-peer, no control plane at all. | `meshd` on each node, with a `static_peers` list in its config.                             |
+| **Coordinated** | Peers sit behind NAT or have changing IPs, or you want identity and permissions managed centrally.                                   | `coordserver` on one reachable host, `meshd` on every node. A static node can do both jobs. |
 
 Machines are given addresses from a fixed `10.10.0.0/16` range in coordinated mode. *(A future version will let you choose your own address pool.)*
 
@@ -283,11 +283,11 @@ The interface is always named `knoten-wg`.
 **What Knoten protects today**
 
 - **Traffic is end-to-end encrypted by WireGuard**, peer to peer. The coordination server sees metadata: public keys, names, addresses, endpoints, and last-seen times.
-- **Private keys never leave the machine.** They are generated locally via Go's `crypto/ecdh` X25519 and written `0600`.
+- **Private keys never leave the machine.** They are generated locally and written `0600`.
 - **The join token is compared in constant time**, so it cannot be recovered by timing the response.
 - **The coordination server is defensive at the edges**: bounded request bodies, strict JSON decoding, request timeouts, panic recovery, and a single-writer SQLite store with `WAL` and `synchronous = FULL`.
 
-**What it does not protect yet**
+**Known limitations**
 
 - **No TLS.** `coordserver` serves plain HTTP. Terminate TLS in front of it (nginx, Caddy, Traffic) before exposing it publicly, and set `-trust-proxy` only when your proxy overwrites `X-Forwarded-For`.
 - **One shared token for the whole fleet.** Any machine holding it can enroll and read the peer list. There is no per-machine credential and no revocation yet. See the [roadmap](#roadmap).
@@ -296,35 +296,27 @@ The interface is always named `knoten-wg`.
 
 ## Roadmap
 
-As a student, I am constantly learning while building Knoten. This is the project's planned roadmap:
+As a student, I am constantly **learning while building** Knoten. This is the project's planned roadmap:
 
-| Stage  | What we’ll be building                                              | Progress |
-| ------ | ------------------------------------------------------------------- | -------- |
-| **0**  | Initial setup                                                       | ✅        |
-| **1**  | Manual WireGuard configuration                                      | ✅        |
-| **2**  | WireGuard config generator \| v0.1                                  | ✅        |
-| **3**  | Coordination server \| v0.2.0-alpha                                 | ✅        |
-| **4**  | wgctrl \| v0.2.1                                                    | ⚒️       |
-| **5**  | Security, features and stability \| v0.2.2                          | ⚒️       |
-| **6**  | Relay                                                               | -        |
-| **7**  | NAT support                                                         | -        |
-| **8**  | Redundant control-plane coordination<br>(Many coordination servers) | -        |
-| **9**  | Identity & access management                                        | -        |
-| **10** | Management console (UI)                                             | -        |
-| **11** | Hardening                                                           | -        |
-
-Some work carried by those stages:
-
-- **Native HTTPS support.**
-- **Native WireGuard control** via [`wgctrl`](https://github.com/WireGuard/wgctrl-go), replacing the current shell-out to `wg` and `wg-quick`.
-- **Per-machine credentials, leases and revocation**, replacing the single shared join token and realising the "access is a lease" principle.
-- **NAT traversal**, and a last-resort relay for peers that genuinely cannot reach each other. Even then, relayed packets stay sealed and end-to-end encrypted, unreadable by the relay.
-- **Multiple coordination servers**, so the control plane has no single point of failure.
-- **IPv6 support**.
-
+| Stage  | What we’ll be building                     | Progress | **Details**                                                                                                                                                                                    |
+| ------ | ------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **0**  | Initial setup                              | ✅        | -                                                                                                                                                                                              |
+| **1**  | Manual WireGuard configuration             | ✅        | -                                                                                                                                                                                              |
+| **2**  | WireGuard config generator \| v0.1         | ✅        | -                                                                                                                                                                                              |
+| **3**  | Coordination server \| v0.2.0-alpha        | ✅        | -                                                                                                                                                                                              |
+| **4**  | wgctrl + Light optimizations \| v0.2.1     | ⚒️       | - **Native WireGuard control** via [`wgctrl`](https://github.com/WireGuard/wgctrl-go), replacing the config file writing mechanism.<br>- Replace the current shell-out to `wg` and `wg-quick`. |
+| **5**  | Security, features and stability \| v0.2.2 | ⚒️       | - **Protocol and communication improvements.**<br>- **Native HTTPS support.**<br>- **Optimizations (e.g. the IP allocation mechanism and database iterations)**<br>                            |
+| **6**  | Relay                                      | -        | - **Last-resort relay** for peers that genuinely cannot reach each other. (Even then, relayed packets stay sealed and end-to-end encrypted, unreadable by the relay.)                          |
+| **7**  | NAT support                                | -        | -                                                                                                                                                                                              |
+| **8**  | IPv6 support                               | -        | -                                                                                                                                                                                              |
+| **9**  |                                            | -        | -                                                                                                                                                                                              |
+| **10** | Redundant control-plane coordination       | -        | - **Multiple coordination servers**, so the control plane has no single point of failure.                                                                                                      |
+| **11** | Identity & access management               | -        | - **Per-machine credentials, leases and revocation**, replacing the single shared join token and realising the "access is a lease" principle.                                                  |
+| **12** | Management console (UI)                    | -        | -                                                                                                                                                                                              |
+| **13** | Hardening                                  | -        | -                                                                                                                                                                                              |
 ## Contributing
 
-This is a student-driven project, and contributions are genuinely welcome: bug reports, design critique, and documentation just as much as code.
+This is a student-driven project, and contributions are genuinely welcome: bug reports, suggestions, design critique, and documentation just as much as code.
 
 Please open an issue to discuss anything substantial before sending a large pull request. Because the project documents its own development journey, PRs that change design decisions are more useful when they explain the reasoning, not only the diff.
 

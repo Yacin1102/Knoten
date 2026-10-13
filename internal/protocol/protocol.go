@@ -1,10 +1,10 @@
 package protocol
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 const (
@@ -62,21 +62,14 @@ var ErrUnknownMachine = errors.New("machine is not registered on this server")
 
 var ErrEmptyKey = errors.New("public key is empty")
 
-const wgKeyLength = 32
-
 func ValidatePublicKey(s string) error {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ErrEmptyKey
 	}
 	
-	raw, err := base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		return fmt.Errorf("public key is not valid base64: %w", err)
-	}
-
-	if len(raw) != wgKeyLength {
-		return fmt.Errorf("public key decodes to %d bytes, want %d", len(raw), wgKeyLength)
+	if _, err := wgtypes.ParseKey(s); err != nil {
+		return fmt.Errorf("public key is invalid: %w", err)
 	}
 
 	return nil

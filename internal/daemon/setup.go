@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"net/netip"
 
 	"knoten/internal/protocol"
 )
@@ -186,16 +187,12 @@ func setupStandalone(reader *bufio.Reader, cfg *Config) error {
 }
 
 func validateCIDRAddress(s string) error {
-	ip, prefix, found := strings.Cut(s, "/")
-	if !found {
-		return fmt.Errorf("an address needs a prefix length, e.g. %s/24", s)
+	prefix, err := netip.ParsePrefix(strings.TrimSpace(s))
+	if err != nil {
+		return fmt.Errorf("%q is not a valid address/prefix: %w", s, err)
 	}
-	if err := validateIPv4(ip); err != nil {
-		return err
-	}
-	n, err := strconv.Atoi(prefix)
-	if err != nil || n < 0 || n > 32 {
-		return fmt.Errorf("%q is not a valid prefix length (0-32)", prefix)
+	if !prefix.Addr().Is4() {
+		return fmt.Errorf("%q is not a valid IPv4 address", s)
 	}
 	return nil
 }
@@ -214,18 +211,9 @@ func validateAllowedIPs(s string) error {
 }
 
 func validateIPv4(s string) error {
-	parts := strings.Split(s, ".")
-	if len(parts) != 4 {
-		return fmt.Errorf("%q should have four parts separated by dots", s)
-	}
-	for _, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil {
-			return fmt.Errorf("%q in %q is not a number", p, s)
-		}
-		if n < 0 || n > 255 {
-			return fmt.Errorf("%d in %q is not between 0 and 255", n, s)
-		}
+	ip, err := netip.ParseAddr(strings.TrimSpace(s))
+	if err != nil || !ip.Is4() {
+		return fmt.Errorf("%q is not a valid IPv4 address", s)
 	}
 	return nil
 }
