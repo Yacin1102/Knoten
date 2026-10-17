@@ -132,7 +132,7 @@ func Setup(configPath string, force bool) error {
 
 const ExampleServerURL = "https://coord.example.com:8443"
 
-func setupCoordinated(reader *bufio.Reader, cfg *Config) error {
+func setupCoordinated(reader *bufio.Reader, cfg *Config_file) error {
 	cfg.ServerURL = askUntilValid(reader,
 		fmt.Sprintf("Coordination server URL (e.g. %s): ", ExampleServerURL), false,
 		func(s string) error {
@@ -152,8 +152,9 @@ func setupCoordinated(reader *bufio.Reader, cfg *Config) error {
 	return nil
 }
 
-func setupStandalone(reader *bufio.Reader, cfg *Config) error {
-	cfg.Address = askUntilValid(reader, "This node's Address (e.g. 10.0.0.1/24): ", false, validateCIDRAddress)
+func setupStandalone(reader *bufio.Reader, cfg *Config_file) error {
+	cfg.Address, _ = netip.ParsePrefix(askUntilValid(reader, "This node's Address (e.g. 10.0.0.1/24): ", false, validateCIDRAddress))
+
 
 	fmt.Println()
 

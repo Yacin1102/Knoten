@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
+
 	"knoten/internal/daemon"
 )
 
@@ -101,11 +102,11 @@ func showPublicKey(configPath string) error {
 		return err
 	}
 
-	if st.PrivateKey == "" {
+	if st.PrivateKey == (wgtypes.Key{}) {
 		return fmt.Errorf("no key yet at %s; run meshd once to generate one", cfg.StatePath)
 	}
 
-	prv, err := wgtypes.ParseKey(st.PrivateKey)
+	prv := st.PrivateKey
 	if err != nil {
 		return fmt.Errorf("the private key in %s is unusable: %w", cfg.StatePath, err)
 	}

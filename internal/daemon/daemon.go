@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"os"
-	"os/exec"
+	"net/netip"
 	"strings"
 	"time"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -22,23 +21,22 @@ const (
 	maxBackoff = 60 * time.Second
 )
 
-// wgCommandTimeout caps a wg or wg-quick invocation. wg-quick resolves peer endpoints through DNS, so it can block for a long time.
-const wgCommandTimeout = 30 * time.Second
-
 type Daemon struct {
-	cfg   Config
-	log   *log.Logger
-	http  *client.Client
-	state State
+	cfg         Config_file
+	log         *log.Logger
+	http        *client.Client
+	state       State_file
 	lastWritten string
-	backoff time.Duration
+	backoff     time.Duration
+	wgRuntime   *wg.Runtime
 }
 
-func New(cfg Config, logger *log.Logger) (*Daemon, error) {
+func New(cfg Config_file, logger *log.Logger) (*Daemon, error) {
 	d := &Daemon{
-		cfg:     cfg,
-		log:     logger,
-		backoff: minBackoff,
+		cfg:       cfg,
+		log:       logger,
+		backoff:   minBackoff,
+		wgRuntime: wg.NewRuntime(logger),
 	}
 
 	if cfg.UseCoordinationServer {
@@ -74,7 +72,7 @@ func (d *Daemon) ensureKeyPair() error {
 		return err
 	}
 
-	if st.PrivateKey == "" {
+	if st.PrivateKey == (wgtypes.Key{}) {
 		d.log.Printf("no key found at %s... generating a new identity for this machine", d.cfg.StatePath)
 
 		kp, err := wg.GenerateKeyPair()
@@ -82,8 +80,8 @@ func (d *Daemon) ensureKeyPair() error {
 			return fmt.Errorf("could not generate a key pair: %w", err)
 		}
 
-		st.PrivateKey = kp.PrivateKey.String()
-		st.PublicKey = kp.PublicKey.String()
+		st.PrivateKey = kp.PrivateKey
+		st.PublicKey = kp.PublicKey
 
 		if err := SaveState(d.cfg.StatePath, st); err != nil {
 			return fmt.Errorf("could not save the new key: %w", err)
@@ -91,11 +89,8 @@ func (d *Daemon) ensureKeyPair() error {
 
 		d.log.Printf("generated key pair; this machine's PUBLIC key is: %s", kp.PublicKey)
 	} else {
-		prv, err := wgtypes.ParseKey(st.PrivateKey)
-		if err != nil {
-			return fmt.Errorf("the private key in %s is unusable: %w", d.cfg.StatePath, err)
-		}
-		pub := prv.PublicKey().String()
+		prv := st.PrivateKey
+		pub := prv.PublicKey()
 
 		if st.PublicKey != pub {
 			st.PublicKey = pub
@@ -115,14 +110,13 @@ func (d *Daemon) runStandalone(ctx context.Context) error {
 	iface := wg.Interface{
 		PrivateKey: d.state.PrivateKey,
 		Address:    d.cfg.Address,
-		ListenPort: fmt.Sprintf("%d", d.cfg.ListenPort),
-		DNS:        d.cfg.DNS,
+		ListenPort:d.cfg.ListenPort,
 		MTU:        d.cfg.MTU,
 	}
 
-	peers := make([]wg.Peer, 0, len(d.cfg.StaticPeers))
+	peers := make([]wg.Peer1, 0, len(d.cfg.StaticPeers))
 	for _, p := range d.cfg.StaticPeers {
-		peers = append(peers, wg.Peer{
+		peers = append(peers, wg.Peer1{
 			Name:                p.Name,
 			PublicKey:           p.PublicKey,
 			AllowedIPs:          p.AllowedIPs,
@@ -172,29 +166,29 @@ func (d *Daemon) runCoordinated(ctx context.Context, once bool, refresh <-chan s
 
 // cycle performs one register-if-needed, sync, and write, and returns the interval the server wants next.
 func (d *Daemon) cycle(ctx context.Context) (time.Duration, error) {
-	if d.state.VPNIP == "" {
+	if !d.state.VPNIP.IsValid() {
 		if err := d.register(ctx); err != nil {
 			return 0, err
 		}
 	}
 
 	resp, err := d.http.Sync(ctx, protocol.SyncRequest{
-		PublicKey:  d.state.PublicKey,
+		PublicKey:  d.state.PublicKey.String(),
 		ListenPort: d.cfg.ListenPort,
 	})
 
 	if errors.Is(err, protocol.ErrUnknownMachine) {
 		d.log.Printf("the coordination server does not know this machine any more — registering again")
 
-		d.state.VPNIP = ""
-		d.state.VPNCIDR = ""
+		d.state.VPNIP = netip.Addr{}
+		d.state.VPNCIDR = netip.Prefix{}
 
 		if err := d.register(ctx); err != nil {
 			return 0, err
 		}
 
 		resp, err = d.http.Sync(ctx, protocol.SyncRequest{
-			PublicKey:  d.state.PublicKey,
+			PublicKey:  d.state.PublicKey.String(),
 			ListenPort: d.cfg.ListenPort,
 		})
 	}
@@ -203,10 +197,10 @@ func (d *Daemon) cycle(ctx context.Context) (time.Duration, error) {
 		return 0, err
 	}
 
-	if resp.Self.VPNIP != "" && resp.Self.VPNIP != d.state.VPNIP {
+	if resp.Self.VPNIP != "" && resp.Self.VPNIP != d.state.VPNIP.String() {
 		d.log.Printf("the server says our VPN address is %s (we had %q) — accepting the server's answer",
 			resp.Self.VPNIP, d.state.VPNIP)
-		d.state.VPNIP = resp.Self.VPNIP
+		d.state.VPNIP, _ = netip.ParseAddr(resp.Self.VPNIP)
 		if err := SaveState(d.cfg.StatePath, d.state); err != nil {
 			d.log.Printf("warning: could not save the corrected address: %v", err)
 		}
@@ -223,7 +217,7 @@ func (d *Daemon) register(ctx context.Context) error {
 	d.log.Printf("registering with %s", d.cfg.ServerURL)
 
 	resp, err := d.http.Register(ctx, protocol.RegisterRequest{
-		PublicKey:  d.state.PublicKey,
+		PublicKey:  d.state.PublicKey.String(),
 		Name:       d.cfg.MachineName(),
 		ListenPort: d.cfg.ListenPort,
 	})
@@ -231,8 +225,8 @@ func (d *Daemon) register(ctx context.Context) error {
 		return err
 	}
 
-	d.state.VPNIP = resp.VPNIP
-	d.state.VPNCIDR = resp.VPNCIDR
+	d.state.VPNIP, _ = netip.ParseAddr(resp.VPNIP)
+	d.state.VPNCIDR, _ = netip.ParsePrefix(resp.VPNCIDR)
 
 	if err := SaveState(d.cfg.StatePath, d.state); err != nil {
 		return fmt.Errorf("registered, but could not save the assigned address: %w", err)
@@ -252,23 +246,22 @@ func (d *Daemon) renderFromPeers(peers []protocol.Peer) string {
 	iface := wg.Interface{
 		PrivateKey: d.state.PrivateKey,
 		Address:    addressWithPrefix(d.state.VPNIP, d.state.VPNCIDR),
-		ListenPort: fmt.Sprintf("%d", d.cfg.ListenPort),
-		DNS:        d.cfg.DNS,
+		ListenPort: d.cfg.ListenPort,
 		MTU:        d.cfg.MTU,
 	}
 
-	out := make([]wg.Peer, 0, len(peers))
+	out := make([]wg.Peer1, 0, len(peers))
 	for _, p := range peers {
 		if p.VPNIP == "" {
 			d.log.Printf("skipping peer %q: the server gave it no VPN address", p.Name)
 			continue
 		}
 
-		out = append(out, wg.Peer{
-			Name:      p.Name,
-			PublicKey: p.PublicKey,
-			AllowedIPs: p.VPNIP + "/32",
-			Endpoint: p.Endpoint,
+		out = append(out, wg.Peer1{
+			Name:                p.Name,
+			PublicKey:           p.PublicKey,
+			AllowedIPs:          p.VPNIP + "/32",
+			Endpoint:            p.Endpoint,
 			PersistentKeepalive: d.cfg.PersistentKeepalive,
 		})
 	}
@@ -280,7 +273,7 @@ func (d *Daemon) applyConfig(ctx context.Context, rendered string) error {
 	changed := rendered != d.lastWritten
 
 	if changed {
-		if err := wg.WriteAtomic(WireGuardConfigPath, rendered, 0o600); err != nil {
+		if err := WriteAtomic(WireGuardConfigPath, rendered, 0o600); err != nil {
 			return fmt.Errorf("could not write the WireGuard config: %w", err)
 		}
 		d.lastWritten = rendered
@@ -289,70 +282,13 @@ func (d *Daemon) applyConfig(ctx context.Context, rendered string) error {
 		d.log.Printf("wrote %s (%d peer(s))", WireGuardConfigPath, peerCount)
 	}
 
-	if err := d.applyTunnel(ctx, changed); err != nil {
+	if err := d.wgRuntime.ApplyTunnel(ctx, changed); err != nil {
 		d.log.Printf("WARNING: the config is written, but the tunnel was not updated: %v", err)
 		d.log.Printf("         if the tunnel is down: sudo wg-quick up %s", TunnelName)
 		d.log.Printf("         if it is already up:   sudo bash -c 'wg syncconf %s <(wg-quick strip %s)'", TunnelName, TunnelName)
 	}
 
 	return nil
-}
-
-// applyTunnel brings the tunnel up if it is down, or pushes the new peers into the
-// running interface if the config changed. Syncing does not drop the interface, so
-// connections through the tunnel survive a peer list change.
-
-// Temporary: this shells out to wireguard-tools. We will later replace it with wgctrl / netlink probably.
-func (d *Daemon) applyTunnel(ctx context.Context, changed bool) error {
-	if _, err := runWG(ctx, "wg", "show", TunnelName); err != nil {
-		if _, err := runWG(ctx, "wg-quick", "up", TunnelName); err != nil {
-			return err
-		}
-
-		d.log.Printf("brought %s up", TunnelName)
-		return nil
-	}
-
-	if !changed {
-		return nil
-	}
-
-	// `wg syncconf` rejects the wg-quick-only keys (Address, DNS, MTU), so feed it the stripped form of the file we just wrote.
-	stripped, err := runWG(ctx, "wg-quick", "strip", TunnelName)
-	if err != nil {
-		return err
-	}
-
-	tmp := WireGuardConfigPath + ".sync"
-	if err := wg.WriteAtomic(tmp, stripped, 0o600); err != nil {
-		return err
-	}
-	defer os.Remove(tmp)
-
-	if _, err := runWG(ctx, "wg", "syncconf", TunnelName, tmp); err != nil {
-		return err
-	}
-
-	d.log.Printf("synced %s", TunnelName)
-	return nil
-}
-
-// runWG runs a wireguard-tools command and returns its standard output.
-func runWG(ctx context.Context, name string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, wgCommandTimeout)
-	defer cancel()
-
-	var stdout, stderr strings.Builder
-
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("%s %s: %w: %s",name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
-
-	return stdout.String(), nil
 }
 
 func sleepOrCancel(ctx context.Context, d time.Duration, refresh <-chan struct{}) bool {
@@ -385,16 +321,9 @@ func (d *Daemon) nextBackoff() time.Duration {
 	return current + jitter
 }
 
-// addressWithPrefix returns the given IP with the prefix length from the CIDR. If the CIDR is empty, it returns a /32 prefix.
-func addressWithPrefix(ip, cidr string) string {
-	if ip == "" {
-		return ""
+func addressWithPrefix(ip netip.Addr, cidr netip.Prefix) netip.Prefix {
+	if !cidr.IsValid() {
+		return netip.PrefixFrom(ip, ip.BitLen()) // single host: /32 for IPv4
 	}
-
-	_, prefix, found := strings.Cut(cidr, "/")
-	if !found || prefix == "" {
-		return ip + "/32"
-	}
-
-	return ip + "/" + prefix
+	return netip.PrefixFrom(ip, cidr.Bits())
 }

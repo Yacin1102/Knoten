@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"path/filepath"
+	"net/netip"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
 	"knoten/internal/protocol"
 	"knoten/internal/wg"
@@ -17,7 +20,7 @@ const DefaultConfigPath = DefaultKnotenDir + "/meshd.json"
 
 const DefaultTokenPath = DefaultKnotenDir + "/token"
 
-const DefaultStatePath = "/var/lib/knoten/meshd-state.json"
+const DefaultStatePath = "/var/lib/knoten/meshd-State_file.json"
 
 const TunnelName = "knoten-wg"
 
@@ -30,7 +33,7 @@ type StaticPeer struct {
 	Endpoint string `json:"endpoint,omitempty"`
 }
 
-type Config struct {
+type Config_file struct {
 	UseCoordinationServer bool `json:"use_coordination_server"`
 	ServerURL string `json:"server_url,omitempty"`
 	JoinToken string `json:"join_token,omitempty"`
@@ -38,15 +41,21 @@ type Config struct {
 	Name string `json:"name,omitempty"`
 	ListenPort int `json:"listen_port"`
 	StatePath string `json:"state_path"`
-	Address string `json:"address,omitempty"`
+	Address netip.Prefix `json:"address,omitempty"`
 	PersistentKeepalive int `json:"persistent_keepalive"`
-	DNS string `json:"dns,omitempty"`
-	MTU string `json:"mtu,omitempty"`
+	MTU int `json:"mtu,omitempty"`
 	StaticPeers []StaticPeer `json:"static_peers,omitempty"`
 }
 
-func DefaultConfig() Config {
-	return Config{
+type State_file struct {
+	PrivateKey wgtypes.Key `json:"private_key"`
+	PublicKey wgtypes.Key `json:"public_key"`
+	VPNIP netip.Addr `json:"vpn_ip,omitempty"`
+	VPNCIDR netip.Prefix `json:"vpn_cidr,omitempty"`
+}
+
+func DefaultConfig() Config_file {
+	return Config_file{
 		UseCoordinationServer: false,
 		ListenPort:          wg.DefaultListenPort,
 		StatePath:           DefaultStatePath,
@@ -54,29 +63,29 @@ func DefaultConfig() Config {
 	}
 }
 
-func LoadConfig(path string) (Config, error) {
+func LoadConfig(path string) (Config_file, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Config{}, fmt.Errorf("no config file at %s (run `meshd -setup` to create one)", path)
+			return Config_file{}, fmt.Errorf("no config file at %s (run `meshd -setup` to create one)", path)
 		}
-		return Config{}, fmt.Errorf("could not read %s: %w", path, err)
+		return Config_file{}, fmt.Errorf("could not read %s: %w", path, err)
 	}
 
 	cfg := DefaultConfig()
 
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("%s is not valid JSON: %w", path, err)
+		return Config_file{}, fmt.Errorf("%s is not valid JSON: %w", path, err)
 	}
 
 	if err := cfg.Validate(); err != nil {
-		return Config{}, fmt.Errorf("%s: %w", path, err)
+		return Config_file{}, fmt.Errorf("%s: %w", path, err)
 	}
 
 	return cfg, nil
 }
 
-func marshalConfig(cfg Config) ([]byte, error) {
+func marshalConfig(cfg Config_file) ([]byte, error) {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("could not encode the config: %w", err)
@@ -85,19 +94,18 @@ func marshalConfig(cfg Config) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
-func SaveConfig(path string, cfg Config) error {
+func SaveConfig(path string, cfg Config_file) error {
 	data, err := marshalConfig(cfg)
 	if err != nil {
 		return err
 	}
 
-	return wg.WriteAtomic(path, string(data), 0o600)
+	return WriteAtomic(path, string(data), 0o600)
 }
 
-func (c *Config) Validate() error {
+func (c *Config_file) Validate() error {
 	c.ServerURL = strings.TrimSpace(c.ServerURL)
 	c.Name = c.MachineName()
-	c.Address = strings.TrimSpace(c.Address)
 	c.JoinToken = strings.TrimSpace(c.JoinToken)
 
 	if c.ListenPort == 0 {
@@ -123,8 +131,8 @@ func (c *Config) Validate() error {
 			return errors.New("use_coordination_server is true but server_url is empty")
 		}
 	} else {
-		if c.Address == "" {
-			return errors.New("use_coordination_server is false, so address must be set (e.g. \"10.0.0.1/24\")")
+		if c.Address.IsValid() {
+			return errors.New("use_coordination_server is false, so a valid address must be set (e.g. \"10.0.0.1/24\")")
 		}
 		for i, p := range c.StaticPeers {
 			if strings.TrimSpace(p.PublicKey) == "" {
@@ -142,7 +150,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func (c *Config) ResolveToken() (string, error) {
+func (c *Config_file) ResolveToken() (string, error) {
 	if c.TokenFile == "" {
 		return c.JoinToken, nil
 	}
@@ -155,7 +163,7 @@ func (c *Config) ResolveToken() (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-func (c *Config) MachineName() string {
+func (c *Config_file) MachineName() string {
 	if name := strings.TrimSpace(c.Name); name != "" {
 		return name
 	}
@@ -170,36 +178,72 @@ func (c *Config) MachineName() string {
 	return host
 }
 
-type State struct {
-	PrivateKey string `json:"private_key"`
-	PublicKey string `json:"public_key"`
-	VPNIP string `json:"vpn_ip,omitempty"`
-	VPNCIDR string `json:"vpn_cidr,omitempty"`
-}
-
-func LoadState(path string) (State, error) {
+func LoadState(path string) (State_file, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return State{}, nil
+			return State_file{}, nil
 		}
-		return State{}, fmt.Errorf("could not read the state file %s: %w", path, err)
+		return State_file{}, fmt.Errorf("could not read the state file %s: %w", path, err)
 	}
 
-	var st State
+	var st State_file
 	if err := json.Unmarshal(data, &st); err != nil {
-		return State{}, fmt.Errorf("the state file %s is corrupted (%w); if you delete it this machine will get a NEW identity and a NEW VPN address", path, err)
+		return State_file{}, fmt.Errorf("the state file %s is corrupted (%w); if you delete it this machine will get a NEW identity and a NEW VPN address", path, err)
 	}
 
 	return st, nil
 }
 
-func SaveState(path string, st State) error {
+func SaveState(path string, st State_file) error {
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return fmt.Errorf("could not encode the state: %w", err)
 	}
 	data = append(data, '\n')
 
-	return wg.WriteAtomic(path, string(data), 0o600)
+	return WriteAtomic(path, string(data), 0o600)
+}
+
+func WriteAtomic(path string, content string, perm os.FileMode) error {
+	
+	dir := filepath.Dir(path)
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("could not create directory %s: %w", dir, err)
+	}
+
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp*")
+	if err != nil {
+		return fmt.Errorf("could not create temporary file in %s: %w", dir, err)
+	}
+
+	tmpName := tmp.Name()
+
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+	}()
+
+	if _, err := tmp.WriteString(content); err != nil {
+		return fmt.Errorf("could not write temporary file %s: %w", tmpName, err)
+	}
+
+	if err := tmp.Chmod(perm); err != nil {
+		return fmt.Errorf("could not set permissions on %s: %w", tmpName, err)
+	}
+
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("could not flush %s to disk: %w", tmpName, err)
+	}
+
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("could not close %s: %w", tmpName, err)
+	}
+
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("could not move %s into place at %s: %w", tmpName, path, err)
+	}
+
+	return nil
 }
