@@ -1,6 +1,6 @@
 package wg
 
-// link_linuxo.go is the Linux side of bringing the tunnel up and keeping it in
+// link_OSlinux.go is the Linux side of bringing the tunnel up and keeping it in
 // sync. It currently shells out to wg and wg-quick; it is meant to move to
 // netlink (link and address setup).
 
@@ -8,12 +8,57 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+	"net"
+
+	"github.com/vishvananda/netlink"
 )
+
+const TunnelName = "knoten-wg"
+
+// MakeInterface creates a WireGuard interface with the specified name using netlink. It returns an error if the interface could not be created.
+func MakeInterface() error{
+	la := netlink.NewLinkAttrs()
+	la.Name = TunnelName
+	link := &netlink.Wireguard{LinkAttrs: la}
+	err := netlink.LinkAdd(link)
+
+	return err
+}
+
+// DeleteInterface deletes the specified interface using netlink. It returns an error if the interface could not be deleted.
+func DeleteInterface(In netlink.Link) error {
+	err := netlink.LinkDel(In)
+
+	return err
+}
+
+// AssignInterfaceIP assigns an IP address to the specified interface using netlink. It returns an error if the address could not be assigned.
+func AssignInterfaceIP(In netlink.Link, Addr netip.Prefix) error{
+	err := netlink.AddrAdd(In, 
+		&netlink.Addr{IPNet: &net.IPNet{
+			IP: Addr.Addr().AsSlice() ,
+			Mask: net.CIDRMask(Addr.Bits(), Addr.Addr().BitLen()),
+	}})
+
+	return err
+}
+
+// UpInterface brings the specified interface up using netlink. It returns an error if the interface could not be brought up.
+func UpInterface(In netlink.Link) error {
+	err := netlink.LinkSetUp(In)
+
+	return err
+}
+
+
+// legacy code i should remove / change:
+// \/
 
 type Runtime struct {
 	log *log.Logger
@@ -22,7 +67,6 @@ type Runtime struct {
 // wgCommandTimeout caps a wg or wg-quick invocation. wg-quick resolves peer endpoints through DNS, so it can block for a long time.
 const wgCommandTimeout = 30 * time.Second
 
-const TunnelName = "knoten-wg"
 const WireGuardConfigPath = "/etc/wireguard/" + TunnelName + ".conf"
 
 func (r *Runtime) ApplyTunnel(ctx context.Context, changed bool) error {

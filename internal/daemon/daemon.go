@@ -111,7 +111,7 @@ func (d *Daemon) runStandalone(ctx context.Context) error {
 		PrivateKey: d.state.PrivateKey,
 		Address:    d.cfg.Address,
 		ListenPort:d.cfg.ListenPort,
-		MTU:        d.cfg.MTU,
+		//MTU:        d.cfg.MTU,
 	}
 
 	peers := make([]wg.Peer1, 0, len(d.cfg.StaticPeers))
@@ -247,7 +247,7 @@ func (d *Daemon) renderFromPeers(peers []protocol.Peer) string {
 		PrivateKey: d.state.PrivateKey,
 		Address:    addressWithPrefix(d.state.VPNIP, d.state.VPNCIDR),
 		ListenPort: d.cfg.ListenPort,
-		MTU:        d.cfg.MTU,
+		//MTU:        d.cfg.MTU,
 	}
 
 	out := make([]wg.Peer1, 0, len(peers))
