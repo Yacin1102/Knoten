@@ -28,7 +28,6 @@ type Daemon struct {
 	state       State_file
 	lastWritten string
 	backoff     time.Duration
-	wgRuntime   *wg.Runtime
 }
 
 func New(cfg Config_file, logger *log.Logger) (*Daemon, error) {
@@ -36,7 +35,6 @@ func New(cfg Config_file, logger *log.Logger) (*Daemon, error) {
 		cfg:       cfg,
 		log:       logger,
 		backoff:   minBackoff,
-		wgRuntime: wg.NewRuntime(logger),
 	}
 
 	if cfg.UseCoordinationServer {
@@ -276,18 +274,28 @@ func (d *Daemon) applyConfig(ctx context.Context, rendered string) error {
 		if err := WriteAtomic(WireGuardConfigPath, rendered, 0o600); err != nil {
 			return fmt.Errorf("could not write the WireGuard config: %w", err)
 		}
-		d.lastWritten = rendered
 
 		peerCount := strings.Count(rendered, "[Peer]")
 		d.log.Printf("wrote %s (%d peer(s))", WireGuardConfigPath, peerCount)
 	}
 
-	if err := d.wgRuntime.ApplyTunnel(ctx, changed); err != nil {
+	created, synced, err := wg.ApplyTunnel(ctx, changed, addressWithPrefix(d.state.VPNIP, d.state.VPNCIDR))
+	if err != nil {
 		d.log.Printf("WARNING: the config is written, but the tunnel was not updated: %v", err)
-		d.log.Printf("         if the tunnel is down: sudo wg-quick up %s", TunnelName)
-		d.log.Printf("         if it is already up:   sudo bash -c 'wg syncconf %s <(wg-quick strip %s)'", TunnelName, TunnelName)
+		d.log.Printf("-if the tunnel is down: sudo wg-quick up %s", TunnelName)
+		d.log.Printf("-if it is already up:   sudo bash -c 'wg syncconf %s <(wg-quick strip %s)'", TunnelName, TunnelName)
+		return nil
 	}
 
+	if created {
+		d.log.Printf("brought %s up", TunnelName)
+	}
+
+	if synced {
+		d.log.Printf("synced %s", TunnelName)
+	}
+
+	d.lastWritten = rendered
 	return nil
 }
 

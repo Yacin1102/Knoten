@@ -7,7 +7,6 @@ package wg
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"net"
+	"errors"
 
 	"github.com/vishvananda/netlink"
 )
@@ -22,13 +22,13 @@ import (
 const TunnelName = "knoten-wg"
 
 // MakeInterface creates a WireGuard interface with the specified name using netlink. It returns an error if the interface could not be created.
-func MakeInterface() error{
+func MakeInterface() (netlink.Link, error) {
 	la := netlink.NewLinkAttrs()
 	la.Name = TunnelName
 	link := &netlink.Wireguard{LinkAttrs: la}
 	err := netlink.LinkAdd(link)
 
-	return err
+	return link, err
 }
 
 // DeleteInterface deletes the specified interface using netlink. It returns an error if the interface could not be deleted.
@@ -57,56 +57,65 @@ func UpInterface(In netlink.Link) error {
 }
 
 
-// legacy code i should remove / change:
-// \/
+// The code below will be removed/ changed:
 
-type Runtime struct {
-	log *log.Logger
-}
 
 // wgCommandTimeout caps a wg or wg-quick invocation. wg-quick resolves peer endpoints through DNS, so it can block for a long time.
 const wgCommandTimeout = 30 * time.Second
 
 const WireGuardConfigPath = "/etc/wireguard/" + TunnelName + ".conf"
 
-func (r *Runtime) ApplyTunnel(ctx context.Context, changed bool) error {
-	if _, err := runWG(ctx, "wg", "show", TunnelName); err != nil {
-		if _, err := runWG(ctx, "wg-quick", "up", TunnelName); err != nil {
-			return err
+
+// replaced what needs to be replaced with netlink here
+func ApplyTunnel(ctx context.Context, changed bool, addr netip.Prefix) (created, synced bool, err error) {
+
+	_, err = netlink.LinkByName(TunnelName)
+	var notFound netlink.LinkNotFoundError
+	if err != nil && !errors.As(err, &notFound) {
+		return false, false, fmt.Errorf("could not look up %s: %w", TunnelName, err)
+	}
+	if err != nil {
+		link, err := MakeInterface()
+		if err != nil {
+			return created, synced, err
 		}
 
-		r.log.Printf("brought %s up", TunnelName)
-		return nil
-	}
+		if err := AssignInterfaceIP(link, addr); err != nil {
+			DeleteInterface(link)
+			return created, synced, err
+		}
 
+		if err := UpInterface(link); err != nil {
+			DeleteInterface(link)
+			return created, synced, err
+		}
+
+		created = true
+		changed = true
+	}
+	
 	if !changed {
-		return nil
+		return created, synced, nil
 	}
 
 	// `wg syncconf` rejects the wg-quick-only keys (Address, DNS, MTU), so feed it the stripped form of the file we just wrote.
 	stripped, err := runWG(ctx, "wg-quick", "strip", TunnelName)
 	if err != nil {
-		return err
+		return created, synced, err
 	}
 
 	tmp := WireGuardConfigPath + ".sync"
 	if err := WriteAtomic(tmp, stripped, 0o600); err != nil {
-		return err
+		return created, synced, err
 	}
 	defer os.Remove(tmp)
 
 	if _, err := runWG(ctx, "wg", "syncconf", TunnelName, tmp); err != nil {
-		return err
+		return created, synced, err
 	}
 
-	r.log.Printf("synced %s", TunnelName)
-	return nil
-}
-
-func NewRuntime(logger *log.Logger) *Runtime {
-    return &Runtime{
-        log: logger,
-    }
+	synced = true
+	return created, synced, nil
 }
 
 // runWG runs a wireguard-tools command and returns its standard output.
