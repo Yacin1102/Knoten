@@ -74,4 +74,3 @@ func sanitiseComment(s string) string {
 func ConfigPath(dir, tunnelName string) string {
 	return filepath.Join(dir, tunnelName+".conf")
 }
-

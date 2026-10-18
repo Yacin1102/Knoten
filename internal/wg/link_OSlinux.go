@@ -56,6 +56,48 @@ func UpInterface(In netlink.Link) error {
 	return err
 }
 
+// SetInterfaceMTU sets the MTU for the specified interface using netlink. It returns an error if the MTU could not be set.
+func SetInterfaceMTU(In netlink.Link, mtu int) error {
+	return netlink.LinkSetMTU(In, mtu)
+}
+
+// TunnelExists checks if the WireGuard tunnel interface exists using netlink. It returns a boolean indicating existence and an error if the check could not be performed.
+func TunnelExists() (Exists bool, err error) {
+	_, err = netlink.LinkByName(TunnelName)
+	var notFound netlink.LinkNotFoundError
+	if errors.As(err, &notFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("could not look up %s: %w", TunnelName, err)
+	}
+	return true, nil
+}
+
+// CreateTunnel creates a WireGuard tunnel interface with the specified IP address and prefix using netlink. It returns an error if the tunnel could not be created or configured.
+func CreateTunnel(addr netip.Prefix, mtu int) (error) {
+		link, err := MakeInterface()
+		if err != nil {
+			return err
+		}
+
+		if err := AssignInterfaceIP(link, addr); err != nil {
+			DeleteInterface(link)
+			return err
+		}
+
+		if err := UpInterface(link); err != nil {
+			DeleteInterface(link)
+			return err
+		}
+
+		if err := SetInterfaceMTU(link, mtu); err != nil {
+			DeleteInterface(link)
+			return err
+		}
+		return nil
+}
+
 
 // The code below will be removed/ changed:
 
@@ -66,56 +108,24 @@ const wgCommandTimeout = 30 * time.Second
 const WireGuardConfigPath = "/etc/wireguard/" + TunnelName + ".conf"
 
 
-// replaced what needs to be replaced with netlink here
-func ApplyTunnel(ctx context.Context, changed bool, addr netip.Prefix) (created, synced bool, err error) {
-
-	_, err = netlink.LinkByName(TunnelName)
-	var notFound netlink.LinkNotFoundError
-	if err != nil && !errors.As(err, &notFound) {
-		return false, false, fmt.Errorf("could not look up %s: %w", TunnelName, err)
-	}
-	if err != nil {
-		link, err := MakeInterface()
-		if err != nil {
-			return created, synced, err
-		}
-
-		if err := AssignInterfaceIP(link, addr); err != nil {
-			DeleteInterface(link)
-			return created, synced, err
-		}
-
-		if err := UpInterface(link); err != nil {
-			DeleteInterface(link)
-			return created, synced, err
-		}
-
-		created = true
-		changed = true
-	}
-	
-	if !changed {
-		return created, synced, nil
-	}
-
+func SyncTunnel(ctx context.Context) (err error) {
 	// `wg syncconf` rejects the wg-quick-only keys (Address, DNS, MTU), so feed it the stripped form of the file we just wrote.
 	stripped, err := runWG(ctx, "wg-quick", "strip", TunnelName)
 	if err != nil {
-		return created, synced, err
+		return err
 	}
 
 	tmp := WireGuardConfigPath + ".sync"
 	if err := WriteAtomic(tmp, stripped, 0o600); err != nil {
-		return created, synced, err
+		return err
 	}
 	defer os.Remove(tmp)
 
 	if _, err := runWG(ctx, "wg", "syncconf", TunnelName, tmp); err != nil {
-		return created, synced, err
+		return err
 	}
 
-	synced = true
-	return created, synced, nil
+	return nil	
 }
 
 // runWG runs a wireguard-tools command and returns its standard output.
@@ -178,5 +188,3 @@ func WriteAtomic(path string, content string, perm os.FileMode) error {
 
 	return nil
 }
-
-

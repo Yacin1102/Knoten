@@ -109,7 +109,7 @@ func (d *Daemon) runStandalone(ctx context.Context) error {
 		PrivateKey: d.state.PrivateKey,
 		Address:    d.cfg.Address,
 		ListenPort:d.cfg.ListenPort,
-		//MTU:        d.cfg.MTU,
+		MTU:        d.cfg.MTU,
 	}
 
 	peers := make([]wg.Peer1, 0, len(d.cfg.StaticPeers))
@@ -245,7 +245,7 @@ func (d *Daemon) renderFromPeers(peers []protocol.Peer) string {
 		PrivateKey: d.state.PrivateKey,
 		Address:    addressWithPrefix(d.state.VPNIP, d.state.VPNCIDR),
 		ListenPort: d.cfg.ListenPort,
-		//MTU:        d.cfg.MTU,
+		MTU:        d.cfg.MTU,
 	}
 
 	out := make([]wg.Peer1, 0, len(peers))
@@ -279,19 +279,26 @@ func (d *Daemon) applyConfig(ctx context.Context, rendered string) error {
 		d.log.Printf("wrote %s (%d peer(s))", WireGuardConfigPath, peerCount)
 	}
 
-	created, synced, err := wg.ApplyTunnel(ctx, changed, addressWithPrefix(d.state.VPNIP, d.state.VPNCIDR))
+	exists, err := wg.TunnelExists()
 	if err != nil {
-		d.log.Printf("WARNING: the config is written, but the tunnel was not updated: %v", err)
-		d.log.Printf("-if the tunnel is down: sudo wg-quick up %s", TunnelName)
-		d.log.Printf("-if it is already up:   sudo bash -c 'wg syncconf %s <(wg-quick strip %s)'", TunnelName, TunnelName)
+		d.log.Printf("WARNING: %v", err)
 		return nil
 	}
 
-	if created {
+	if !exists {
+		if err := wg.CreateTunnel(addressWithPrefix(d.state.VPNIP, d.state.VPNCIDR), d.cfg.MTU); err != nil {
+			d.log.Printf("WARNING: could not bring %s up: %v", TunnelName, err)
+			return nil
+		}
 		d.log.Printf("brought %s up", TunnelName)
 	}
 
-	if synced {
+	// a new link has no key or peers yet, so it always needs a sync
+	if changed || !exists {
+		if err := wg.SyncTunnel(ctx); err != nil {
+			d.log.Printf("WARNING: the config is written, but the tunnel was not updated: %v", err)
+			return nil
+		}
 		d.log.Printf("synced %s", TunnelName)
 	}
 
@@ -329,6 +336,8 @@ func (d *Daemon) nextBackoff() time.Duration {
 	return current + jitter
 }
 
+// addressWithPrefix returns a netip.Prefix that combines the given IP address with the given CIDR prefix length.
+// If the CIDR is invalid, it returns a single-host prefix (/32 for IPv4, /128 for IPv6).
 func addressWithPrefix(ip netip.Addr, cidr netip.Prefix) netip.Prefix {
 	if !cidr.IsValid() {
 		return netip.PrefixFrom(ip, ip.BitLen()) // single host: /32 for IPv4

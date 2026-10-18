@@ -14,7 +14,7 @@ type Interface struct {
 	PrivateKey wgtypes.Key
 	Address netip.Prefix
 	ListenPort int
-	//MTU int
+	MTU int
 }
 
 type Peer1 struct {
