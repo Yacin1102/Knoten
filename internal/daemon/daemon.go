@@ -9,7 +9,6 @@ import (
 	"net/netip"
 	"strings"
 	"time"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
 	"knoten/internal/client"
 	"knoten/internal/protocol"
@@ -70,13 +69,10 @@ func (d *Daemon) ensureKeyPair() error {
 		return err
 	}
 
-	if st.PrivateKey == (wgtypes.Key{}) {
+	if st.PrivateKey.IsZero() {
 		d.log.Printf("no key found at %s... generating a new identity for this machine", d.cfg.StatePath)
 
-		kp, err := wg.GenerateKeyPair()
-		if err != nil {
-			return fmt.Errorf("could not generate a key pair: %w", err)
-		}
+		kp := wg.GenerateKeyPair()
 
 		st.PrivateKey = kp.PrivateKey
 		st.PublicKey = kp.PublicKey

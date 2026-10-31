@@ -1,23 +1,19 @@
 package wg
 
 // state.go holds the typed, in-memory description of the tunnel: this machine's
-// interface settings and its peers. Values stay typed (wgtypes.Key, netip.Prefix)
+// interface settings and its peers. Values stay typed
 // and are only turned into strings at the edges, when stored or sent.
 
 import (
 	"net/netip"
-
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 type Interface struct {
-	PrivateKey wgtypes.Key
+	PrivateKey Key
 	Address netip.Prefix
 	ListenPort int
 	MTU int
 }
-
-
 
 // This struct will be removed and replaced by the typed Structs.
 type Peer1 struct {

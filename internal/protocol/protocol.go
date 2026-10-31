@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
+	"encoding/base64"
 )
 
 const (
@@ -68,9 +68,14 @@ func ValidatePublicKey(s string) error {
 		return ErrEmptyKey
 	}
 	
-	if _, err := wgtypes.ParseKey(s); err != nil {
-		return fmt.Errorf("public key is invalid: %w", err)
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+    	return fmt.Errorf("public key is not valid base64: %w", err)
 	}
+	if len(b) != 32 {
+    	return fmt.Errorf("public key is %d bytes, want 32", len(b))
+	}
+
 
 	return nil
 }

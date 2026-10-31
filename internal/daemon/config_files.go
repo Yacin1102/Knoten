@@ -8,7 +8,6 @@ import (
 	"strings"
 	"path/filepath"
 	"net/netip"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
 	"knoten/internal/protocol"
 	"knoten/internal/wg"
@@ -48,8 +47,8 @@ type Config_file struct {
 }
 
 type State_file struct {
-	PrivateKey wgtypes.Key `json:"private_key"`
-	PublicKey wgtypes.Key `json:"public_key"`
+	PrivateKey wg.Key `json:"private_key"`
+	PublicKey wg.Key `json:"public_key"`
 	VPNIP netip.Addr `json:"vpn_ip,omitempty"`
 	VPNCIDR netip.Prefix `json:"vpn_cidr,omitempty"`
 }
