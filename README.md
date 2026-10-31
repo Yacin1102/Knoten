@@ -23,7 +23,7 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 
 > [!NOTE]
 > **Ongoing development**
-> Optimizing background network (Wgctrl implementation, etc.) and building proper documentation.
+> Migrating to Wireguard-go
 
 > [!NOTE]
 > Status: **Alpha** (latest version `v0.2.0-alpha`)
@@ -304,16 +304,15 @@ As a student, I am constantly **learning while building** Knoten. This is the pr
 | **1**  | Manual WireGuard configuration                        | ✅        | -                                                                                                                                                                     |
 | **2**  | WireGuard config generator \| v0.1                    | ✅        | -                                                                                                                                                                     |
 | **3**  | Coordination server \| v0.2.0-alpha                   | ✅        | -                                                                                                                                                                     |
-| **4**  | wgctrl + Light optimizations \| v0.2.1                | ⚒️       | - **Native WireGuard control** via `wgctrl` replacing the config file writing mechanism.<br>- Replace the current shell-out to `wg` and `wg-quick`.                   |
-| **5**  | windows support                                       | ⚒️       | -                                                                                                                                                                     |
-| **5**  | Security, features and stability improvements \| v0.3 | ⚒️       | - **Protocol and communication improvements.**<br>- **Native HTTPS support.**<br>- **Optimizations (e.g. the IP allocation mechanism and database iterations)**<br>   |
-| **6**  | Relay                                                 | -        | - **Last-resort relay** for peers that genuinely cannot reach each other. (Even then, relayed packets stay sealed and end-to-end encrypted, unreadable by the relay.) |
-| **7**  | NAT support                                           | -        | -                                                                                                                                                                     |
-| **8**  | IPv6 support                                          | -        | -                                                                                                                                                                     |
-| **9**  | Redundant control-plane coordination                  | -        | - **Multiple coordination servers**, so the control plane has no single point of failure.                                                                             |
-| **10** | Identity & access management                          | -        | - **Per-machine credentials, leases and revocation**, replacing the single shared join token and realising the "access is a lease" principle.                         |
-| **11** | Management console (UI)                               | -        | -                                                                                                                                                                     |
-| **12** | Hardening                                             | -        | -                                                                                                                                                                     |
+| **4**  | Wg-go + Light optimizations \| v0.2.1-alpha           | ⚒️       | - **Embed Wireguard into knoten through wg-go package**, replacing the config file writing mechanism.<br>- Replace the current shell-out to `wg` and `wg-quick`.      |
+| **6**  | windows support                                       | ⚒️       | -                                                                                                                                                                     |
+| **7**  | Security, features and stability improvements \| v0.3 | ⚒️       | - **Protocol and communication improvements.**<br>- **Native HTTPS support.**<br>- **Optimizations (e.g. the IP allocation mechanism and database iterations)**<br>   |
+| **8**  | Relay                                                 | -        | - **Last-resort relay** for peers that genuinely cannot reach each other. (Even then, relayed packets stay sealed and end-to-end encrypted, unreadable by the relay.) |
+| **9**  | NAT support                                           | -        | -                                                                                                                                                                     |
+| **10** | Redundant control-plane coordination                  | -        | - **Multiple coordination servers**, so the control plane has no single point of failure.                                                                             |
+| **11** | Identity & access management                          | -        | - **Per-machine credentials, leases and revocation**, replacing the single shared join token and realising the "access is a lease" principle.                         |
+| **12** | Management console (UI)                               | -        | -                                                                                                                                                                     |
+| **13** | Hardening                                             | -        | -                                                                                                                                                                     |
 ## Contributing
 
 This is a student-driven project, and contributions are genuinely welcome: bug reports, suggestions, design critique, and documentation just as much as code.
