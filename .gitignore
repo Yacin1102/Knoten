@@ -1,0 +1,5 @@
+# Local editor settings (gopls GOOS=linux for development on Windows)
+.vscode/
+
+# Local bug notes
+BUGS.md

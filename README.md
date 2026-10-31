@@ -28,7 +28,7 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 > [!NOTE]
 > Status: **Alpha** (latest version `v0.2.0-alpha`)
 >
-> **Knoten is still in its alpha phase.** The first working version runs: a coordination server, a node daemon, automatic key generation, IP address management, and live tunnel updates. 
+> **Knoten is still in its alpha phase.** The current working version runs: a coordination server, a node daemon, automatic key generation, IP address management, and live tunnel updates. 
 > **This is a student-driven project under active development**. Command-line flags, the HTTP API, and on-disk formats may still change between versions, without a compatibility guarantee.
 
 > [!IMPORTANT]
@@ -298,22 +298,22 @@ The interface is always named `knoten-wg`.
 
 As a student, I am constantly **learning while building** Knoten. This is the project's planned roadmap:
 
-| Stage  | What we’ll be building                     | Progress | **Details**                                                                                                                                                                                    |
-| ------ | ------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **0**  | Initial setup                              | ✅        | -                                                                                                                                                                                              |
-| **1**  | Manual WireGuard configuration             | ✅        | -                                                                                                                                                                                              |
-| **2**  | WireGuard config generator \| v0.1         | ✅        | -                                                                                                                                                                                              |
-| **3**  | Coordination server \| v0.2.0-alpha        | ✅        | -                                                                                                                                                                                              |
-| **4**  | wgctrl + Light optimizations \| v0.2.1     | ⚒️       | - **Native WireGuard control** via [`wgctrl`](https://github.com/WireGuard/wgctrl-go), replacing the config file writing mechanism.<br>- Replace the current shell-out to `wg` and `wg-quick`. |
-| **5**  | Security, features and stability \| v0.2.2 | ⚒️       | - **Protocol and communication improvements.**<br>- **Native HTTPS support.**<br>- **Optimizations (e.g. the IP allocation mechanism and database iterations)**<br>                            |
-| **6**  | Relay                                      | -        | - **Last-resort relay** for peers that genuinely cannot reach each other. (Even then, relayed packets stay sealed and end-to-end encrypted, unreadable by the relay.)                          |
-| **7**  | NAT support                                | -        | -                                                                                                                                                                                              |
-| **8**  | IPv6 support                               | -        | -                                                                                                                                                                                              |
-| **9**  |                                            | -        | -                                                                                                                                                                                              |
-| **10** | Redundant control-plane coordination       | -        | - **Multiple coordination servers**, so the control plane has no single point of failure.                                                                                                      |
-| **11** | Identity & access management               | -        | - **Per-machine credentials, leases and revocation**, replacing the single shared join token and realising the "access is a lease" principle.                                                  |
-| **12** | Management console (UI)                    | -        | -                                                                                                                                                                                              |
-| **13** | Hardening                                  | -        | -                                                                                                                                                                                              |
+| Stage  | What we’ll be building                                | Progress | **Details**                                                                                                                                                           |
+| ------ | ----------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **0**  | Initial setup                                         | ✅        | -                                                                                                                                                                     |
+| **1**  | Manual WireGuard configuration                        | ✅        | -                                                                                                                                                                     |
+| **2**  | WireGuard config generator \| v0.1                    | ✅        | -                                                                                                                                                                     |
+| **3**  | Coordination server \| v0.2.0-alpha                   | ✅        | -                                                                                                                                                                     |
+| **4**  | wgctrl + Light optimizations \| v0.2.1                | ⚒️       | - **Native WireGuard control** via `wgctrl` replacing the config file writing mechanism.<br>- Replace the current shell-out to `wg` and `wg-quick`.                   |
+| **5**  | windows support                                       | ⚒️       | -                                                                                                                                                                     |
+| **5**  | Security, features and stability improvements \| v0.3 | ⚒️       | - **Protocol and communication improvements.**<br>- **Native HTTPS support.**<br>- **Optimizations (e.g. the IP allocation mechanism and database iterations)**<br>   |
+| **6**  | Relay                                                 | -        | - **Last-resort relay** for peers that genuinely cannot reach each other. (Even then, relayed packets stay sealed and end-to-end encrypted, unreadable by the relay.) |
+| **7**  | NAT support                                           | -        | -                                                                                                                                                                     |
+| **8**  | IPv6 support                                          | -        | -                                                                                                                                                                     |
+| **9**  | Redundant control-plane coordination                  | -        | - **Multiple coordination servers**, so the control plane has no single point of failure.                                                                             |
+| **10** | Identity & access management                          | -        | - **Per-machine credentials, leases and revocation**, replacing the single shared join token and realising the "access is a lease" principle.                         |
+| **11** | Management console (UI)                               | -        | -                                                                                                                                                                     |
+| **12** | Hardening                                             | -        | -                                                                                                                                                                     |
 ## Contributing
 
 This is a student-driven project, and contributions are genuinely welcome: bug reports, suggestions, design critique, and documentation just as much as code.

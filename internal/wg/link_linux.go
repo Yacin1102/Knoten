@@ -1,6 +1,6 @@
 package wg
 
-// link_OSlinux.go is the Linux side of bringing the tunnel up and keeping it in
+// link_linux.go is the Linux side of bringing the tunnel up and keeping it in
 // sync. It currently shells out to wg and wg-quick; it is meant to move to
 // netlink (link and address setup).
 

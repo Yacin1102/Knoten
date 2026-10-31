@@ -17,6 +17,9 @@ type Interface struct {
 	MTU int
 }
 
+
+
+// This struct will be removed and replaced by the typed Structs.
 type Peer1 struct {
 	Name string
 	PublicKey string
@@ -24,3 +27,4 @@ type Peer1 struct {
 	Endpoint string
 	PersistentKeepalive int
 }
+
