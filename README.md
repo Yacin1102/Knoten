@@ -23,7 +23,8 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 
 > [!NOTE]
 > **Ongoing development**
-> Migrating to Wireguard-go
+> Knoten now embeds [wireguard-go](https://pkg.go.dev/golang.zx2c4.com/wireguard). `meshd` runs WireGuard itself instead of driving the kernel module, so the kernel module and `wireguard-tools` are no longer required.
+
 
 > [!NOTE]
 > Status: **Alpha** (latest version `v0.2.0-alpha`)
@@ -34,6 +35,8 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 > [!IMPORTANT]
 > **Knoten does not currently support nodes behind Network Address Translation (NAT)**. All nodes must have directly reachable IP addresses, whether static or dynamic.
 
+> [!WARNING]
+> **README** is out of date, will update it soon.
 ## Contents
 
 - [Why Knoten](#why-knoten)
@@ -56,12 +59,9 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 
 **Resilient by design.** Tunnels never depend on the coordination layer to stay alive. Existing connections are sustained by WireGuard itself, so losing a coordinator restricts network *administration*, not connectivity. This assumes relatively stable peers; radical, simultaneous changes across the fleet cannot be reconciled until coordination is restored.
 
-**Access is a lease, never a possession.** Every grant is designed to carry an expiry and persist only through renewal. Revocation is simply expiry-now, so removing access is never a special operation, and abandoned access decays to nothing on its own. *(Design principle; the lease mechanism itself is on the [roadmap](#roadmap).)*
+**Access is a lease, never a possession.** Every grant is designed to carry an expiry and persist only through renewal. Revocation is simply expiry-now, so removing access is never a special operation, and abandoned access decays to nothing on its own. *(Design principle not yet implemented; the lease mechanism itself is on the [roadmap](#roadmap).)*
 
 **Small and genuinely self-hostable.** Two static Go binaries and one SQLite file. **You can even run the coordserver and meshd binaries on the same machine.**
-
-**No lock-in.** If you stop the daemon, the tunnel it produced keeps working.
-
 ## How it works
 
 <p align="center">
@@ -73,10 +73,13 @@ On each machine, `meshd`:
 1. **Generates an identity** on first run: a keypair is created locally. The private key is written to a `0600` state file and never leaves the machine.
 2. **Registers** with the coordination server, which assigns it a stable VPN address out of `10.10.0.0/16` and records the public endpoint it was seen from.
 3. **Polls `/v1/sync`** on an interval the server dictates to the whole fleet, receiving the list of peers that have checked in recently.
-4. **Renders `/etc/wireguard/knoten-wg.conf`** atomically, then applies it: `wg-quick up` if the tunnel is down, or `wg syncconf` if it is already running. Syncing does **not** drop the interface, so connections through the tunnel survive a peer-list change.
-5. **Steps back.** All actual traffic flows peer to peer, encrypted end to end by WireGuard.
+4. **Applies the peer list** to its own WireGuard tunnel, `knoten-wg`, which runs inside `meshd` itself. 
+5. **Stays in the background.** All actual traffic flows peer to peer, encrypted end to end by WireGuard.
 
-**If the coordination server becomes unreachable, `meshd` retries with exponential backoff (1s to 60s, with jitter) while the existing tunnel keeps running untouched.**
+
+**The tunnel lives inside `meshd`: stopping `meshd` removes it, and starting it again brings it back. Run it as a service (for example systemd with `Restart=always`) so it comes back on its own.**
+
+**If the coordination server becomes unreachable, `meshd` retries with exponential backoff (1s to 60s, with jitter).**
 
 ## Deployment modes
 
@@ -90,19 +93,7 @@ Machines are given addresses from a fixed `10.10.0.0/16` range in coordinated mo
 ## Requirements
 
 - **Linux** on every node. `meshd` writes to `/etc/wireguard` and manages a kernel interface, so it must run as root.
-- **[`wireguard-tools`](https://www.wireguard.com/install/)** (`wg` and `wg-quick`) installed on every node.
 - **One reachable host** for `coordserver` if you are using coordinated mode.
-
-```bash
-# Debian / Ubuntu
-sudo apt install wireguard-tools
-
-# Fedora / RHEL
-sudo dnf install wireguard-tools
-
-# Arch
-sudo pacman -S wireguard-tools
-```
 
 ## Quick start
 
@@ -270,7 +261,6 @@ meshd -h
 | ---------------------------------- | -------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
 | `/etc/knoten/meshd.json`           | `meshd -setup` | `0600` | Node configuration.                                                                                               |
 | `/var/lib/knoten/meshd-state.json` | `meshd`        | `0600` | Private key, public key, assigned VPN address. **Back this up.**                                                  |
-| `/etc/wireguard/knoten-wg.conf`    | `meshd`        | `0600` | Generated `wg-quick` configuration.                                                                               |
 | `/etc/knoten/token`                | you            | `0600` | Shared join token. Read by `coordserver -token-file`, and by `meshd` only when `token_file` is set in its config. |
 | `/var/lib/knoten/coord.db`         | `coordserver`  | -      | SQLite database of enrolled machines.                                                                             |
 
@@ -304,7 +294,7 @@ As a student, I am constantly **learning while building** Knoten. This is the pr
 | **1**  | Manual WireGuard configuration                        | ✅        | -                                                                                                                                                                     |
 | **2**  | WireGuard config generator \| v0.1                    | ✅        | -                                                                                                                                                                     |
 | **3**  | Coordination server \| v0.2.0-alpha                   | ✅        | -                                                                                                                                                                     |
-| **4**  | Wg-go + Light optimizations \| v0.2.1-alpha           | ⚒️       | - **Embed Wireguard into knoten through wg-go package**, replacing the config file writing mechanism.<br>- Replace the current shell-out to `wg` and `wg-quick`.      |
+| **4**  | Wg-go + Light optimizations \| v0.2.1-alpha           | ✅        | - **Embed Wireguard into knoten through wg-go package**, replacing the config file writing mechanism.<br>- Replace the current shell-out to `wg` and `wg-quick`.      |
 | **6**  | windows support                                       | ⚒️       | -                                                                                                                                                                     |
 | **7**  | Security, features and stability improvements \| v0.3 | ⚒️       | - **Protocol and communication improvements.**<br>- **Native HTTPS support.**<br>- **Optimizations (e.g. the IP allocation mechanism and database iterations)**<br>   |
 | **8**  | Relay                                                 | -        | - **Last-resort relay** for peers that genuinely cannot reach each other. (Even then, relayed packets stay sealed and end-to-end encrypted, unreadable by the relay.) |
