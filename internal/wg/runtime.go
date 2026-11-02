@@ -1,76 +1,104 @@
 package wg
 
-// runtime.go is for the platform-independent side of applying the tunnel:
-// turning the state from state.go into a live WireGuard device through wgctrl,
-// instead of rendering a wg-quick config file (config.go, to be removed).
-
-
-// Config file making process (Will be removed soon, just moved it here to reduce duplicate files) \/
+// runtime.go turns a Config into commands for the embedded wireguard-go device.
+// It talks to the device directly (IpcSet), in the same text format that wg(8)
+// sends over the control socket: https://www.wireguard.com/xplatform/
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
-	"strconv"	
+
+	"slices"
+	"time"
 )
 
 const DefaultListenPort = 51820
 
 const DefaultKeepaliveSeconds = 25
 
-func Render(iface Interface, peers []Peer1) string {
-	
+// Changes counts what one Apply did, for logging.
+type Changes struct {
+	Interface               bool // private key or listen port changed
+	Added, Updated, Removed int
+}
+
+// Apply makes the device match want. It compares want with what Knoten applied
+// last time and sends only the difference, so unchanged peers keep their
+// sessions and peers added by other tools are left alone.
+func (t *Tunnel) Apply(want Config) (Changes, error) {
+	cmds, ch := diff(t.applied, want)
+	if ch == (Changes{}) {
+		return ch, nil // already up to date
+	}
+
+	if err := t.dev.IpcSet(cmds); err != nil {
+		return Changes{}, fmt.Errorf("could not configure %s: %w", TunnelName, err)
+	}
+
+	t.applied = want
+	return ch, nil
+}
+
+// diff writes the commands that turn the device from applied into want.
+func diff(applied, want Config) (string, Changes) {
 	var b strings.Builder
+	var ch Changes
 
-	// [Interface] section
-	b.WriteString("[Interface]\n")
+	if want.Interface.PrivateKey != applied.Interface.PrivateKey {
+		fmt.Fprintf(&b, "private_key=%s\n", want.Interface.PrivateKey.KeyInHex())
+		ch.Interface = true
+	}
 
-	writeKV(&b, "PrivateKey", iface.PrivateKey.String())
-	writeKV(&b, "Address", iface.Address.String())
-	writeKV(&b, "ListenPort", strconv.Itoa(iface.ListenPort))
-	//writeKV(&b, "MTU", strconv.Itoa(iface.MTU))
+	if want.Interface.ListenPort != applied.Interface.ListenPort {
+		fmt.Fprintf(&b, "listen_port=%d\n", want.Interface.ListenPort)
+		ch.Interface = true
+	}
 
-	// [Peer] section per peer
-	for _, p := range peers {
-		if strings.TrimSpace(p.PublicKey) == "" {
+	before := make(map[Key]Peer, len(applied.Peers))
+	for _, p := range applied.Peers {
+		before[p.PublicKey] = p
+	}
+
+	for _, p := range want.Peers {
+		old, existed := before[p.PublicKey]
+		delete(before, p.PublicKey)
+
+		switch {
+		case !existed:
+			ch.Added++
+		case p.sameSettings(old):
 			continue
+		default:
+			ch.Updated++
 		}
-
-		b.WriteString("\n")
-
-		if name := strings.TrimSpace(p.Name); name != "" {
-
-			b.WriteString("# ")
-			b.WriteString(sanitiseComment(name))
-			b.WriteString("\n")
-		}
-
-		b.WriteString("[Peer]\n")
-		writeKV(&b, "PublicKey", p.PublicKey)
-		writeKV(&b, "AllowedIPs", p.AllowedIPs)
-		writeKV(&b, "Endpoint", p.Endpoint)
-
-		if p.PersistentKeepalive > 0 {
-			fmt.Fprintf(&b, "PersistentKeepalive = %d\n", p.PersistentKeepalive)
-		}
+		p.writeTo(&b)
 	}
 
-	return b.String()
-}
-
-func writeKV(b *strings.Builder, key, value string) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return
+	for key := range before {
+		fmt.Fprintf(&b, "public_key=%s\nremove=true\n", key.KeyInHex())
+		ch.Removed++
 	}
-	
-	fmt.Fprintf(b, "%s = %s\n", key, value)
+
+	return b.String(), ch
 }
 
-func sanitiseComment(s string) string {
-	return strings.NewReplacer("\n", " ", "\r", " ").Replace(s)
+// sameSettings reports whether p and q would configure the device the same way.
+func (p Peer) sameSettings(q Peer) bool {
+	return p.Endpoint == q.Endpoint &&
+		p.PersistentKeepalive == q.PersistentKeepalive &&
+		slices.Equal(p.AllowedIPs, q.AllowedIPs)
 }
 
-func ConfigPath(dir, tunnelName string) string {
-	return filepath.Join(dir, tunnelName+".conf")
+// writeTo writes p as a peer block. Sending a peer that already exists updates
+// it in place without dropping its session.
+func (p Peer) writeTo(b *strings.Builder) {
+	fmt.Fprintf(b, "public_key=%s\n", p.PublicKey.KeyInHex())
+	if p.Endpoint.IsValid() {
+		fmt.Fprintf(b, "endpoint=%s\n", p.Endpoint)
+	}
+	fmt.Fprintf(b, "persistent_keepalive_interval=%d\n", int(p.PersistentKeepalive/time.Second))
+	b.WriteString("replace_allowed_ips=true\n")
+	for _, a := range p.AllowedIPs {
+		fmt.Fprintf(b, "allowed_ip=%s\n", a)
+	}
 }

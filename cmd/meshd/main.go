@@ -9,23 +9,20 @@ import (
 	"os/signal"
 	"syscall"
 
-
 	"knoten/internal/daemon"
 )
 
 func main() {
-	
-	configPath := flag.String("config", daemon.DefaultConfigPath,"path to the meshd config file")
 
-	setup := flag.Bool("setup", false,"ask the configuration questions interactively and write the config file")
+	configPath := flag.String("config", daemon.DefaultConfigPath, "path to the meshd config file")
 
-	force := flag.Bool("force", false,"with -setup: overwrite an existing config (WARNING: this machine keeps its key, but re-check your answers)")
+	setup := flag.Bool("setup", false, "ask the configuration questions interactively and write the config file")
 
-	once := flag.Bool("once", false,"perform a single register+sync+write cycle and exit, instead of running forever")
+	force := flag.Bool("force", false, "with -setup: overwrite an existing config (WARNING: this machine keeps its key, but re-check your answers)")
 
-	showKey := flag.Bool("show-key", false,"print this machine's WireGuard public key and exit")
+	showKey := flag.Bool("show-key", false, "print this machine's WireGuard public key and exit")
 
-	printDefault := flag.Bool("print-default-config", false,"print a configuration template to stdout and exit")
+	printDefault := flag.Bool("print-default-config", false, "print a configuration template to stdout and exit")
 
 	flag.Parse()
 
@@ -49,7 +46,8 @@ func main() {
 		if err := daemon.Setup(*configPath, *force); err != nil {
 			fatalf(logger, "%v", err)
 		}
-		*once = true
+		fmt.Println("config written; start meshd to bring the tunnel up")
+		return
 	}
 
 	// LOAD THE CONFIGURATION
@@ -83,7 +81,7 @@ func main() {
 	}()
 
 	// RUN
-	if err := d.Run(ctx, *once, refresh); err != nil {
+	if err := d.Run(ctx, refresh); err != nil {
 		fatalf(logger, "%v", err)
 	}
 
@@ -104,7 +102,7 @@ func showPublicKey(configPath string) error {
 	if st.PrivateKey.IsZero() {
 		return fmt.Errorf("no key yet at %s; run meshd once to generate one", cfg.StatePath)
 	}
-	
+
 	pub := st.PrivateKey.PublicKey().String()
 
 	fmt.Println(pub)

@@ -7,7 +7,6 @@ import (
 	"log"
 	"math/rand"
 	"net/netip"
-	"strings"
 	"time"
 
 	"knoten/internal/client"
@@ -21,19 +20,19 @@ const (
 )
 
 type Daemon struct {
-	cfg         Config_file
-	log         *log.Logger
-	http        *client.Client
-	state       State_file
-	lastWritten string
-	backoff     time.Duration
+	cfg     Config_file
+	log     *log.Logger
+	http    *client.Client
+	state   State_file
+	tun     *wg.Tunnel
+	backoff time.Duration
 }
 
 func New(cfg Config_file, logger *log.Logger) (*Daemon, error) {
 	d := &Daemon{
-		cfg:       cfg,
-		log:       logger,
-		backoff:   minBackoff,
+		cfg:     cfg,
+		log:     logger,
+		backoff: minBackoff,
 	}
 
 	if cfg.UseCoordinationServer {
@@ -51,16 +50,18 @@ func New(cfg Config_file, logger *log.Logger) (*Daemon, error) {
 	return d, nil
 }
 
-func (d *Daemon) Run(ctx context.Context, once bool, refresh <-chan struct{}) error {
+func (d *Daemon) Run(ctx context.Context, refresh <-chan struct{}) error {
 	if err := d.ensureKeyPair(); err != nil {
 		return err
 	}
+
+	defer d.closeTunnel()
 
 	if !d.cfg.UseCoordinationServer {
 		return d.runStandalone(ctx)
 	}
 
-	return d.runCoordinated(ctx, once, refresh)
+	return d.runCoordinated(ctx, refresh)
 }
 
 func (d *Daemon) ensureKeyPair() error {
@@ -99,30 +100,30 @@ func (d *Daemon) ensureKeyPair() error {
 }
 
 func (d *Daemon) runStandalone(ctx context.Context) error {
-	d.log.Printf("coordination server disabled — writing a static config from %d configured peer(s)", len(d.cfg.StaticPeers))
+	d.log.Printf("coordination server disabled, using %d configured peer(s)", len(d.cfg.StaticPeers))
 
-	iface := wg.Interface{
-		PrivateKey: d.state.PrivateKey,
-		Address:    d.cfg.Address,
-		ListenPort:d.cfg.ListenPort,
-		MTU:        d.cfg.MTU,
-	}
-
-	peers := make([]wg.Peer1, 0, len(d.cfg.StaticPeers))
+	want := wg.Config{Interface: d.iface(d.cfg.Address)}
 	for _, p := range d.cfg.StaticPeers {
-		peers = append(peers, wg.Peer1{
-			Name:                p.Name,
-			PublicKey:           p.PublicKey,
-			AllowedIPs:          p.AllowedIPs,
-			Endpoint:            p.Endpoint,
-			PersistentKeepalive: d.cfg.PersistentKeepalive,
-		})
+		peer, err := wg.ParsePeer(p.Name, p.PublicKey, p.AllowedIPs, p.Endpoint, d.cfg.PersistentKeepalive)
+		if err != nil {
+			return fmt.Errorf("static peer %q: %w", p.Name, err)
+		}
+		want.Peers = append(want.Peers, peer)
 	}
 
-	return d.applyConfig(ctx, wg.Render(iface, peers))
+	if err := d.applyConfig(want); err != nil {
+		return err
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil
+	case <-d.tun.Stopped():
+		return fmt.Errorf("%s was shut down from outside meshd", wg.TunnelName)
+	}
 }
 
-func (d *Daemon) runCoordinated(ctx context.Context, once bool, refresh <-chan struct{}) error {
+func (d *Daemon) runCoordinated(ctx context.Context, refresh <-chan struct{}) error {
 	d.log.Printf("coordination server: %s", d.cfg.ServerURL)
 	d.log.Printf("this machine: %q, public key %s", d.cfg.MachineName(), d.state.PublicKey)
 
@@ -142,17 +143,13 @@ func (d *Daemon) runCoordinated(ctx context.Context, once bool, refresh <-chan s
 		default:
 			d.log.Printf("sync failed (will retry in %s): %v", d.backoff.Round(time.Second), err)
 
-			if !sleepOrCancel(ctx, d.nextBackoff(), refresh) {
+			if !sleepOrCancel(ctx, d.nextBackoff(), refresh, d.tunnelStopped()) {
 				return nil
 			}
 			continue
 		}
 
-		if once {
-			return nil
-		}
-
-		if !sleepOrCancel(ctx, interval, refresh) {
+		if !sleepOrCancel(ctx, interval, refresh, d.tunnelStopped()) {
 			return nil
 		}
 	}
@@ -160,6 +157,7 @@ func (d *Daemon) runCoordinated(ctx context.Context, once bool, refresh <-chan s
 
 // cycle performs one register-if-needed, sync, and write, and returns the interval the server wants next.
 func (d *Daemon) cycle(ctx context.Context) (time.Duration, error) {
+	d.dropDeadTunnel()
 	if !d.state.VPNIP.IsValid() {
 		if err := d.register(ctx); err != nil {
 			return 0, err
@@ -200,7 +198,7 @@ func (d *Daemon) cycle(ctx context.Context) (time.Duration, error) {
 		}
 	}
 
-	if err := d.applyConfig(ctx, d.renderFromPeers(resp.Peers)); err != nil {
+	if err := d.applyConfig(d.configFromServer(resp.Peers)); err != nil {
 		return 0, err
 	}
 
@@ -235,74 +233,89 @@ func (d *Daemon) register(ctx context.Context) error {
 	return nil
 }
 
-// renderFromPeers turns a peer list from the server into WireGuard config text.
-func (d *Daemon) renderFromPeers(peers []protocol.Peer) string {
-	iface := wg.Interface{
+// iface is this machine's side of the tunnel, with the given address.
+func (d *Daemon) iface(addr netip.Prefix) wg.Interface {
+	return wg.Interface{
 		PrivateKey: d.state.PrivateKey,
-		Address:    addressWithPrefix(d.state.VPNIP, d.state.VPNCIDR),
+		Address:    addr,
 		ListenPort: d.cfg.ListenPort,
 		MTU:        d.cfg.MTU,
 	}
+}
 
-	out := make([]wg.Peer1, 0, len(peers))
+// configFromServer turns the server's peer list into the desired tunnel config.
+func (d *Daemon) configFromServer(peers []protocol.Peer) wg.Config {
+	want := wg.Config{Interface: d.iface(addressWithPrefix(d.state.VPNIP, d.state.VPNCIDR))}
+
 	for _, p := range peers {
 		if p.VPNIP == "" {
 			d.log.Printf("skipping peer %q: the server gave it no VPN address", p.Name)
 			continue
 		}
 
-		out = append(out, wg.Peer1{
-			Name:                p.Name,
-			PublicKey:           p.PublicKey,
-			AllowedIPs:          p.VPNIP + "/32",
-			Endpoint:            p.Endpoint,
-			PersistentKeepalive: d.cfg.PersistentKeepalive,
-		})
+		peer, err := wg.ParsePeer(p.Name, p.PublicKey, p.VPNIP+"/32", p.Endpoint, d.cfg.PersistentKeepalive)
+		if err != nil {
+			d.log.Printf("skipping peer %q: %v", p.Name, err)
+			continue
+		}
+		want.Peers = append(want.Peers, peer)
 	}
 
-	return wg.Render(iface, out)
+	return want
 }
 
-func (d *Daemon) applyConfig(ctx context.Context, rendered string) error {
-	changed := rendered != d.lastWritten
-
-	if changed {
-		if err := WriteAtomic(WireGuardConfigPath, rendered, 0o600); err != nil {
-			return fmt.Errorf("could not write the WireGuard config: %w", err)
+// applyConfig creates the tunnel if it does not exist yet, then makes it match want.
+func (d *Daemon) applyConfig(want wg.Config) error {
+	if d.tun == nil {
+		t, err := wg.OpenTunnel(want.Interface.Address, want.Interface.MTU, d.log.Printf)
+		if err != nil {
+			return err
 		}
-
-		peerCount := strings.Count(rendered, "[Peer]")
-		d.log.Printf("wrote %s (%d peer(s))", WireGuardConfigPath, peerCount)
+		d.tun = t
+		d.log.Printf("brought %s up", wg.TunnelName)
 	}
 
-	exists, err := wg.TunnelExists()
+	ch, err := d.tun.Apply(want)
 	if err != nil {
-		d.log.Printf("WARNING: %v", err)
-		return nil
+		return err
 	}
 
-	if !exists {
-		if err := wg.CreateTunnel(addressWithPrefix(d.state.VPNIP, d.state.VPNCIDR), d.cfg.MTU); err != nil {
-			d.log.Printf("WARNING: could not bring %s up: %v", TunnelName, err)
-			return nil
-		}
-		d.log.Printf("brought %s up", TunnelName)
-	}
-
-	// a new link has no key or peers yet, so it always needs a sync
-	if changed || !exists {
-		if err := wg.SyncTunnel(ctx); err != nil {
-			d.log.Printf("WARNING: the config is written, but the tunnel was not updated: %v", err)
-			return nil
-		}
-		d.log.Printf("synced %s", TunnelName)
-	}
-
-	d.lastWritten = rendered
+	//if ch != (wg.Changes{}) {
+	d.log.Printf("synced %s: %d added, %d updated, %d removed",
+		wg.TunnelName, ch.Added, ch.Updated, ch.Removed)
+	//}
 	return nil
 }
 
-func sleepOrCancel(ctx context.Context, d time.Duration, refresh <-chan struct{}) bool {
+// closeTunnel removes the tunnel, if there is one.
+func (d *Daemon) closeTunnel() {
+	if d.tun == nil {
+		return
+	}
+	d.tun.Close()
+	d.tun = nil
+	d.log.Printf("removed %s", wg.TunnelName)
+}
+
+// tunnelStopped fires when the tunnel stops. With no tunnel it returns nil, which never fires.
+func (d *Daemon) tunnelStopped() <-chan struct{} {
+	if d.tun == nil {
+		return nil
+	}
+	return d.tun.Stopped()
+}
+
+// dropDeadTunnel forgets a tunnel that was shut down from outside meshd
+func (d *Daemon) dropDeadTunnel() {
+	select {
+	case <-d.tunnelStopped():
+		d.log.Printf("%s was shut down from outside meshd; recreating it", wg.TunnelName)
+		d.closeTunnel()
+	default:
+	}
+}
+
+func sleepOrCancel(ctx context.Context, d time.Duration, refresh <-chan struct{}, tunnelStopped <-chan struct{}) bool {
 	if d <= 0 {
 		d = time.Second
 	}
@@ -314,6 +327,8 @@ func sleepOrCancel(ctx context.Context, d time.Duration, refresh <-chan struct{}
 	case <-ctx.Done():
 		return false
 	case <-refresh:
+		return true
+	case <-tunnelStopped:
 		return true
 	case <-timer.C:
 		return true

@@ -19,24 +19,24 @@ import (
 )
 
 func main() {
-	listenAddr := flag.String("listen", ":8080","address to listen on")
+	listenAddr := flag.String("listen", ":8080", "address to listen on")
 
-	dbPath := flag.String("db", "/var/lib/knoten/coord.db","path to the SQLite database file; it is created if missing")
+	dbPath := flag.String("db", "/var/lib/knoten/coord.db", "path to the SQLite database file; it is created if missing")
 
-	tokenFlag := flag.String("token", "","shared join token (INSECURE: visible in `ps`; prefer -token-file)")
+	tokenFlag := flag.String("token", "", "shared join token (INSECURE: visible in `ps`; prefer -token-file)")
 
-	tokenFile := flag.String("token-file", "","path to a file containing the shared join token (recommended over -token)")
+	tokenFile := flag.String("token-file", "", "path to a file containing the shared join token (recommended over -token)")
 
-	syncInterval := flag.Duration("sync-interval", 30*time.Second,"how often daemons are told to poll; the server dictates this to the whole fleet")
+	syncInterval := flag.Duration("sync-interval", 30*time.Second, "how often daemons are told to poll; the server dictates this to the whole fleet")
 
-	peerTimeout := flag.Duration("peer-timeout", 90*time.Second,"how long a machine may stay silent before it is left out of peer lists (should be ~3x sync-interval)")
+	peerTimeout := flag.Duration("peer-timeout", 90*time.Second, "how long a machine may stay silent before it is left out of peer lists (should be ~3x sync-interval)")
 
-	trustProxy := flag.Bool("trust-proxy", false,"trust the X-Forwarded-For header for the caller's IP; ONLY enable this behind a reverse proxy you control")
+	trustProxy := flag.Bool("trust-proxy", false, "trust the X-Forwarded-For header for the caller's IP; ONLY enable this behind a reverse proxy you control")
 
 	flag.Parse()
 
 	logger := log.New(os.Stderr, "coordserver: ", log.LstdFlags)
-	
+
 	cidr, err := store.ParseCIDR(store.VPNRange)
 	if err != nil {
 		fatalf(logger, "the built-in VPN range %q is not usable: %v", store.VPNRange, err)
@@ -88,7 +88,7 @@ func main() {
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       120 * time.Second,
-		
+
 		ErrorLog: logger,
 	}
 

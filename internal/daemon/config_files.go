@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
-	"path/filepath"
 	"net/netip"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"knoten/internal/protocol"
 	"knoten/internal/wg"
@@ -21,44 +21,40 @@ const DefaultTokenPath = DefaultKnotenDir + "/token"
 
 const DefaultStatePath = "/var/lib/knoten/meshd-State_file.json"
 
-const TunnelName = "knoten-wg"
-
-const WireGuardConfigPath = "/etc/wireguard/" + TunnelName + ".conf"
-
 type StaticPeer struct {
-	Name string `json:"name,omitempty"`
-	PublicKey string `json:"public_key"`
+	Name       string `json:"name,omitempty"`
+	PublicKey  string `json:"public_key"`
 	AllowedIPs string `json:"allowed_ips"`
-	Endpoint string `json:"endpoint,omitempty"`
+	Endpoint   string `json:"endpoint,omitempty"`
 }
 
 type Config_file struct {
-	UseCoordinationServer bool `json:"use_coordination_server"`
-	ServerURL string `json:"server_url,omitempty"`
-	JoinToken string `json:"join_token,omitempty"`
-	TokenFile string `json:"token_file,omitempty"`
-	Name string `json:"name,omitempty"`
-	ListenPort int `json:"listen_port"`
-	StatePath string `json:"state_path"`
-	Address netip.Prefix `json:"address,omitempty"`
-	PersistentKeepalive int `json:"persistent_keepalive"`
-	MTU int `json:"mtu,omitempty"`
-	StaticPeers []StaticPeer `json:"static_peers,omitempty"`
+	UseCoordinationServer bool         `json:"use_coordination_server"`
+	ServerURL             string       `json:"server_url,omitempty"`
+	JoinToken             string       `json:"join_token,omitempty"`
+	TokenFile             string       `json:"token_file,omitempty"`
+	Name                  string       `json:"name,omitempty"`
+	ListenPort            int          `json:"listen_port"`
+	StatePath             string       `json:"state_path"`
+	Address               netip.Prefix `json:"address,omitempty"`
+	PersistentKeepalive   int          `json:"persistent_keepalive"`
+	MTU                   int          `json:"mtu,omitempty"`
+	StaticPeers           []StaticPeer `json:"static_peers,omitempty"`
 }
 
 type State_file struct {
-	PrivateKey wg.Key `json:"private_key"`
-	PublicKey wg.Key `json:"public_key"`
-	VPNIP netip.Addr `json:"vpn_ip,omitempty"`
-	VPNCIDR netip.Prefix `json:"vpn_cidr,omitempty"`
+	PrivateKey wg.Key       `json:"private_key"`
+	PublicKey  wg.Key       `json:"public_key"`
+	VPNIP      netip.Addr   `json:"vpn_ip,omitempty"`
+	VPNCIDR    netip.Prefix `json:"vpn_cidr,omitempty"`
 }
 
 func DefaultConfig() Config_file {
 	return Config_file{
 		UseCoordinationServer: false,
-		ListenPort:          wg.DefaultListenPort,
-		StatePath:           DefaultStatePath,
-		PersistentKeepalive: wg.DefaultKeepaliveSeconds,
+		ListenPort:            wg.DefaultListenPort,
+		StatePath:             DefaultStatePath,
+		PersistentKeepalive:   wg.DefaultKeepaliveSeconds,
 	}
 }
 
@@ -130,7 +126,7 @@ func (c *Config_file) Validate() error {
 			return errors.New("use_coordination_server is true but server_url is empty")
 		}
 	} else {
-		if c.Address.IsValid() {
+		if !c.Address.IsValid() {
 			return errors.New("use_coordination_server is false, so a valid address must be set (e.g. \"10.0.0.1/24\")")
 		}
 		for i, p := range c.StaticPeers {
@@ -205,7 +201,7 @@ func SaveState(path string, st State_file) error {
 }
 
 func WriteAtomic(path string, content string, perm os.FileMode) error {
-	
+
 	dir := filepath.Dir(path)
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {

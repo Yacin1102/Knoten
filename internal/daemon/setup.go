@@ -3,12 +3,13 @@ package daemon
 import (
 	"bufio"
 	"fmt"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
-	"net/netip"
 
 	"knoten/internal/protocol"
+	"knoten/internal/wg"
 )
 
 func ask(reader *bufio.Reader, question string) string {
@@ -75,8 +76,7 @@ func Setup(configPath string, force bool) error {
 	fmt.Println("---Welcome to meshd setup!")
 	fmt.Println()
 
-
-	fmt.Printf("Interface %s, config at %s\n", TunnelName, WireGuardConfigPath)
+	fmt.Printf("Interface %s\n", wg.TunnelName)
 
 	fmt.Println()
 
@@ -155,7 +155,6 @@ func setupCoordinated(reader *bufio.Reader, cfg *Config_file) error {
 func setupStandalone(reader *bufio.Reader, cfg *Config_file) error {
 	cfg.Address, _ = netip.ParsePrefix(askUntilValid(reader, "This node's Address (e.g. 10.0.0.1/24): ", false, validateCIDRAddress))
 
-
 	fmt.Println()
 
 	for {
@@ -218,7 +217,6 @@ func validateIPv4(s string) error {
 	}
 	return nil
 }
-
 
 func PrintDefaultConfig() error {
 
