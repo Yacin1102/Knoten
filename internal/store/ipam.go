@@ -10,7 +10,7 @@ var ErrPoolExhausted = errors.New("no free VPN addresses left in the configured 
 
 // VPNRange is the address range machines are given addresses from.
 //
-// This is deliberately not configurable. The range is only ever consulted by 
+// This is deliberately not configurable. The range is only ever consulted by
 // NextFreeIP, which runs once per machine, when a public key is first seen; the
 // address it returns is then stored in the database and never recomputed. So
 // changing the range does not move machines that are already enrolled so it only

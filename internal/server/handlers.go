@@ -58,8 +58,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		machine.Name, shortKey(machine.PublicKey), machine.VPNIP, machine.Endpoint)
 
 	writeJSON(w, http.StatusOK, protocol.RegisterResponse{
-		VPNIP: machine.VPNIP,
-		VPNCIDR: s.cfg.Store.CIDR(),
+		VPNIP:    machine.VPNIP,
+		VPNCIDR:  s.cfg.Store.CIDR(),
 		Endpoint: machine.Endpoint,
 	})
 }
@@ -99,11 +99,11 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, r, err)
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, protocol.SyncResponse{
 
-		Self: toProtocolPeer(self),
-		Peers: toProtocolPeers(peers),
+		Self:                toProtocolPeer(self),
+		Peers:               toProtocolPeers(peers),
 		SyncIntervalSeconds: int(s.cfg.SyncInterval.Seconds()),
 	})
 }

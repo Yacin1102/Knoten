@@ -1,57 +1,53 @@
 package protocol
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
-	"encoding/base64"
 )
 
 const (
 	PathRegister = "/v1/register"
-	PathSync = "/v1/sync"
-	PathHealth = "/v1/health"
+	PathSync     = "/v1/sync"
+	PathHealth   = "/v1/health"
 )
 
 const DefaultSyncIntervalSeconds = 30
 
 type RegisterRequest struct {
-
-	PublicKey string `json:"public_key"`
-	Name string `json:"name"`
-	ListenPort int `json:"listen_port"`
+	PublicKey  string `json:"public_key"`
+	Name       string `json:"name"`
+	ListenPort int    `json:"listen_port"`
 
 	JoinToken string `json:"join_token,omitempty"`
 }
 
 type RegisterResponse struct {
-
-	VPNIP string `json:"vpn_ip"`
-	VPNCIDR string `json:"vpn_cidr"`
+	VPNIP    string `json:"vpn_ip"`
+	VPNCIDR  string `json:"vpn_cidr"`
 	Endpoint string `json:"endpoint"`
 }
 
 type SyncRequest struct {
-
-	PublicKey string `json:"public_key"`
-	ListenPort int `json:"listen_port"`
+	PublicKey  string `json:"public_key"`
+	ListenPort int    `json:"listen_port"`
 
 	JoinToken string `json:"join_token,omitempty"`
 }
 
 type Peer struct {
-	
 	PublicKey string `json:"public_key"`
-	Name string `json:"name"`
-	VPNIP string `json:"vpn_ip"`
-	Endpoint string `json:"endpoint"`
-	LastSeen int64 `json:"last_seen"`
+	Name      string `json:"name"`
+	VPNIP     string `json:"vpn_ip"`
+	Endpoint  string `json:"endpoint"`
+	LastSeen  int64  `json:"last_seen"`
 }
 
 type SyncResponse struct {
-	Self Peer `json:"self"`
-	Peers []Peer `json:"peers"`
-	SyncIntervalSeconds int `json:"sync_interval_seconds"`
+	Self                Peer   `json:"self"`
+	Peers               []Peer `json:"peers"`
+	SyncIntervalSeconds int    `json:"sync_interval_seconds"`
 }
 
 type ErrorResponse struct {
@@ -67,15 +63,14 @@ func ValidatePublicKey(s string) error {
 	if s == "" {
 		return ErrEmptyKey
 	}
-	
+
 	b, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-    	return fmt.Errorf("public key is not valid base64: %w", err)
+		return fmt.Errorf("public key is not valid base64: %w", err)
 	}
 	if len(b) != 32 {
-    	return fmt.Errorf("public key is %d bytes, want 32", len(b))
+		return fmt.Errorf("public key is %d bytes, want 32", len(b))
 	}
-
 
 	return nil
 }
@@ -84,7 +79,7 @@ func ValidateListenPort(p int) error {
 	if p < 1 || p > 65535 {
 		return fmt.Errorf("listen port %d is out of range 1-65535", p)
 	}
-	
+
 	return nil
 }
 

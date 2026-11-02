@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	_ "modernc.org/sqlite"
 	"net/netip"
 	"time"
-	_ "modernc.org/sqlite"
 )
 
 type Machine struct {
@@ -114,7 +114,7 @@ func (s *Store) RegisterMachine(ctx context.Context, in Machine) (Machine, error
 	)
 
 	switch {
-		
+
 	case errors.Is(err, sql.ErrNoRows):
 
 	case err != nil:
@@ -140,7 +140,6 @@ func (s *Store) RegisterMachine(ctx context.Context, in Machine) (Machine, error
 		existing.LastSeen = now
 		return existing, nil
 	}
-
 
 	rows, err := tx.QueryContext(ctx, `SELECT vpn_ip FROM machines`)
 	if err != nil {
@@ -276,12 +275,11 @@ func (s *Store) Sync(ctx context.Context, publicKey, endpoint string, listenPort
 }
 
 func (s *Store) CountMachines(ctx context.Context, aliveSince time.Time) (total int, alive int, err error) {
-	
+
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM machines`).Scan(&total); err != nil {
 		return 0, 0, fmt.Errorf("could not count the machines: %w", err)
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM machines WHERE last_seen >= ?`, aliveSince.Unix(),
-	).Scan(&alive); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM machines WHERE last_seen >= ?`, aliveSince.Unix()).Scan(&alive); err != nil {
 		return 0, 0, fmt.Errorf("could not count the live machines: %w", err)
 	}
 

@@ -1,11 +1,12 @@
 package wg
 
 import (
-	"fmt"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex")
+	"encoding/hex"
+	"fmt"
+)
 
 const KeyLen = 32
 
@@ -13,7 +14,7 @@ type Key [KeyLen]byte
 
 type KeyPair struct {
 	PrivateKey Key
-	PublicKey Key
+	PublicKey  Key
 }
 
 // GenerateKeyPair generates a new WireGuard key pair and fills the provided KeyPair struct with the generated keys.
