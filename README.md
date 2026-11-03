@@ -6,7 +6,7 @@
   <a href="#license"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Go 1.26+" src="https://img.shields.io/badge/go-1.26%2B-00ADD8.svg?logo=go&logoColor=white">
   <img alt="Platform: Linux" src="https://img.shields.io/badge/platform-linux-lightgrey.svg?logo=linux&logoColor=white">
-  <img alt="Version: 0.2.0-alpha" src="https://img.shields.io/badge/version-0.2.0--alpha-orange.svg">
+  <img alt="Version: 0.2.0-alpha" src="https://img.shields.io/badge/version-0.3.0--alpha-orange.svg">
   <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-orange.svg">
   <img alt="Built on WireGuard" src="https://img.shields.io/badge/built%20on-WireGuard-88171A.svg">
 </p>
@@ -20,14 +20,15 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 <p align="center">
   <img src="./assets/Knoten_demo.gif" alt="Knoten_demo.gif">
 </p>
+*This demo was recorded with the previous version (`v0.2.0-alpha`). Using Knoten works the same way; the change is under the hood: `meshd` used to write a WireGuard config file and hand it to the kernel module through `wg` and `wg-quick`, and now it runs WireGuard itself through an embedded [wireguard-go](https://pkg.go.dev/golang.zx2c4.com/wireguard). Some log lines differ, and stopping `meshd` now removes the tunnel. You can still check the tunnel with `sudo wg show knoten-wg` if `wireguard-tools` is installed.*
 
 > [!NOTE]
 > **Ongoing development**
-> Knoten now embeds [wireguard-go](https://pkg.go.dev/golang.zx2c4.com/wireguard). `meshd` runs WireGuard itself instead of driving the kernel module, so the kernel module and `wireguard-tools` are no longer required.
+> **Peer memory and unified config file:** `meshd` will remember the last peer list it received, so a restarted node has its peers right away, even while the coordination server is unreachable. Standalone and coordinated mode will also merge into a single configuration file.
 
 
 > [!NOTE]
-> Status: **Alpha** (latest version `v0.2.0-alpha`)
+> Status: **Alpha** (latest version `v0.3.0-alpha`)
 >
 > **Knoten is still in its alpha phase.** The current working version runs: a coordination server, a node daemon, automatic key generation, IP address management, and live tunnel updates. 
 > **This is a student-driven project under active development**. Command-line flags, the HTTP API, and on-disk formats may still change between versions, without a compatibility guarantee.
@@ -36,7 +37,7 @@ A coordination server may exist, but it only handles **discovery, identity, and 
 > **Knoten does not currently support nodes behind Network Address Translation (NAT)**. All nodes must have directly reachable IP addresses, whether static or dynamic.
 
 > [!WARNING]
-> **README** is out of date, will update it soon.
+> **`meshd` does not remember its peers yet.** The tunnel lives inside `meshd`, so every restart builds it from scratch with no peers, until the next successful sync with the coordination server. If the server is unreachable at that moment, the node stays cut off from the mesh until it comes back. The upcoming release will add peer memory to fix this.
 ## Contents
 
 - [Why Knoten](#why-knoten)
@@ -92,7 +93,8 @@ Machines are given addresses from a fixed `10.10.0.0/16` range in coordinated mo
 
 ## Requirements
 
-- **Linux** on every node. `meshd` writes to `/etc/wireguard` and manages a kernel interface, so it must run as root.
+- **Linux** on every node, with `/dev/net/tun` available (it is on standard distributions). `meshd` creates the `knoten-wg` interface itself, so it must run as root.
+
 - **One reachable host** for `coordserver` if you are using coordinated mode.
 
 ## Quick start
@@ -148,8 +150,8 @@ Give the binary the right permissions:
 ```bash
 chmod +x ./meshd
 ```
-Run interactive setup on the node:
 
+Run interactive setup on the node:
 ```bash
 sudo ./meshd -setup
 ```
@@ -160,7 +162,7 @@ Setup asks a short list of questions and writes `/etc/knoten/meshd.json`:
 ListenPort (default 51820):
 Use a coordination server? (y/N): y
 Coordination server URL (e.g. https://coord.example.com:8443): http://<server IP>:8080
-Join token (leave empty if the server does not require one): <paste the token from step 2 if you generated one>
+Join token (leave empty if the server does not require one): <paste the token from step 1 if you generated one>
 Name for this machine (leave empty for "Hostname-01"):
 ```
 
@@ -176,16 +178,18 @@ Setup stores the token you paste inline in `meshd.json`, as `join_token`. To kee
 
 `token_file` wins when both are present: if it is set, `join_token` is ignored entirely. Setup never writes `token_file` for you, so this is always a manual edit.
 
-`-setup` then performs a single register-and-sync cycle and exits, so you can confirm everything worked before running it for real:
+
+`-setup` writes the config and exits. Then start `meshd`; on its first run it creates an identity, registers, and brings the tunnel up:
 
 ```
-meshd: Config written to /etc/knoten/meshd.json
-meshd: no key found at /var/lib/knoten/meshd-state.json - generating a new identity for this machine
+meshd: no key found at /var/lib/knoten/meshd-State_file.json... generating a new identity for this machine
 meshd: generated key pair; this machine's PUBLIC key is: 9Kx...=
+meshd: coordination server: http://198.51.100.10:8080
+meshd: this machine: "node-1", public key 9Kx...=
 meshd: registering with http://198.51.100.10:8080
 meshd: registered: our VPN address is 10.10.0.2 in 10.10.0.0/16
-meshd: wrote /etc/wireguard/knoten-wg.conf (0 peer(s))
 meshd: brought knoten-wg up
+meshd: synced knoten-wg: 0 added, 0 updated, 0 removed
 ```
 
 Now run it continuously:
@@ -201,8 +205,7 @@ sudo meshd
 Repeat step 2 on every other machine. Each one gets its own key and its own address, and within one sync interval (30s by default) every node sees every other node:
 
 ```
-meshd: wrote /etc/wireguard/knoten-wg.conf (2 peer(s))
-meshd: synced knoten-wg
+meshd: synced knoten-wg: 2 added, 0 updated, 0 removed
 ```
 
 #### 4. Verify
@@ -213,8 +216,8 @@ curl -s http://<server IP>:8080/v1/health
 # {"status":"ok","machines_total":3,"machines_alive":3,"uptime_seconds":412,
 #  "vpn_cidr":"10.10.0.0/16","sync_interval_seconds":30}
 
-# What does WireGuard think?
-sudo wg show knoten-wg
+# What does WireGuard think? (You will need wireguard tools installed to use this command)
+sudo wg show knoten-wg 
 
 # Can you reach a peer over the mesh?
 ping 10.10.0.3
@@ -235,14 +238,14 @@ This node's Address (e.g. 10.0.0.1/24): 10.0.0.1/24
 
 Peer PublicKey (leave empty to finish): xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=
   AllowedIPs (e.g. 10.0.0.2/32): 10.0.0.2/32
-  Endpoint (e.g. 192.168.56.102:51820): 203.0.113.7:51820
+  Endpoint (e.g. 192.168.56.102:51820) (leave empty if this peer has no fixed address): 203.0.113.7:51820
   Name for this peer (optional): db-01
 Peer PublicKey (leave empty to finish):
 ```
 
-Use `meshd -show-key` on each node to read the public key you need to paste into the others.
+Start `meshd` once on each node to create its key, then run `meshd -show-key` to read the public key you need to paste into the others.
 
-In standalone mode `meshd` renders the config, applies it, and **exits**: there is nothing to poll. Re-run it after editing the peer list.
+In standalone mode `meshd` brings the tunnel up with the configured peers and **keeps running**, since the tunnel lives inside it. After editing the peer list, restart `meshd`.
 
 ## Command-line reference
 
@@ -253,18 +256,19 @@ coordserver -h
 meshd -h
 ```
 
-**Signals:** `SIGHUP` makes `meshd` sync immediately. `SIGINT` and `SIGTERM` stop it cleanly, leaving the tunnel up.
+**Signals:** `SIGHUP` makes `meshd` sync immediately (coordinated mode only). `SIGINT` and `SIGTERM` stop it cleanly and remove the tunnel.
 
 ## Files and paths
 
-| Path                               | Written by     | Mode   | Contents                                                                                                          |
-| ---------------------------------- | -------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
-| `/etc/knoten/meshd.json`           | `meshd -setup` | `0600` | Node configuration.                                                                                               |
-| `/var/lib/knoten/meshd-state.json` | `meshd`        | `0600` | Private key, public key, assigned VPN address. **Back this up.**                                                  |
-| `/etc/knoten/token`                | you            | `0600` | Shared join token. Read by `coordserver -token-file`, and by `meshd` only when `token_file` is set in its config. |
-| `/var/lib/knoten/coord.db`         | `coordserver`  | -      | SQLite database of enrolled machines.                                                                             |
+| Path                                | Written by     | Mode                          | Contents                                                                                                          |
+| ----------------------------------- | -------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `/etc/knoten/meshd.json`            | `meshd -setup` | `0600`                        | Node configuration.                                                                                               |
+| `/var/lib/knoten/meshd-State_file.json` | `meshd`    | `0600`                        | Private key, public key, assigned VPN address. **Back this up.**                                                  |
+| `/etc/knoten/token`                 | you            | `0600`                        | Shared join token. Read by `coordserver -token-file`, and by `meshd` only when `token_file` is set in its config. |
+| `/var/lib/knoten/coord.db`          | `coordserver`  | -                             | SQLite database of enrolled machines.                                                                             |
+| `/var/run/wireguard/knoten-wg.sock` | `meshd`        | `0600`-equivalent (root only) | WireGuard control socket. Exists while `meshd` runs.                                                              |
 
-> **Deleting `meshd-state.json` gives the machine a brand-new identity and a brand-new VPN address on the next register.** The old registration lingers on the server until it times out.
+> **Deleting `meshd-State_file.json` gives the machine a brand-new identity and a brand-new VPN address on the next register.** The old registration lingers on the server until it times out.
 
 The interface is always named `knoten-wg`.
 
@@ -288,21 +292,21 @@ The interface is always named `knoten-wg`.
 
 As a student, I am constantly **learning while building** Knoten. This is the project's planned roadmap:
 
-| Stage  | What we’ll be building                                | Progress | **Details**                                                                                                                                                           |
-| ------ | ----------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **0**  | Initial setup                                         | ✅        | -                                                                                                                                                                     |
-| **1**  | Manual WireGuard configuration                        | ✅        | -                                                                                                                                                                     |
-| **2**  | WireGuard config generator \| v0.1                    | ✅        | -                                                                                                                                                                     |
-| **3**  | Coordination server \| v0.2.0-alpha                   | ✅        | -                                                                                                                                                                     |
-| **4**  | Wg-go + Light optimizations \| v0.2.1-alpha           | ✅        | - **Embed Wireguard into knoten through wg-go package**, replacing the config file writing mechanism.<br>- Replace the current shell-out to `wg` and `wg-quick`.      |
-| **6**  | windows support                                       | ⚒️       | -                                                                                                                                                                     |
-| **7**  | Security, features and stability improvements \| v0.3 | ⚒️       | - **Protocol and communication improvements.**<br>- **Native HTTPS support.**<br>- **Optimizations (e.g. the IP allocation mechanism and database iterations)**<br>   |
-| **8**  | Relay                                                 | -        | - **Last-resort relay** for peers that genuinely cannot reach each other. (Even then, relayed packets stay sealed and end-to-end encrypted, unreadable by the relay.) |
-| **9**  | NAT support                                           | -        | -                                                                                                                                                                     |
-| **10** | Redundant control-plane coordination                  | -        | - **Multiple coordination servers**, so the control plane has no single point of failure.                                                                             |
-| **11** | Identity & access management                          | -        | - **Per-machine credentials, leases and revocation**, replacing the single shared join token and realising the "access is a lease" principle.                         |
-| **12** | Management console (UI)                               | -        | -                                                                                                                                                                     |
-| **13** | Hardening                                             | -        | -                                                                                                                                                                     |
+| Stage | What we’ll be building                                        | Progress | **Details**                                                                                                                                                                                                                                                                            |
+| ----- | ------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | WireGuard config generator \| v0.1                            | ✅        | -                                                                                                                                                                                                                                                                                      |
+| 2     | Coordination server \| v0.2.0-alpha                           | ✅        | -                                                                                                                                                                                                                                                                                      |
+| 3     | Wg-go + Light optimizations \| v0.3.0-alpha                   | ✅        | - **Embed Wireguard into knoten through wg-go package**, replacing the config file writing mechanism.<br>- Replace the current shell-out to `wg` and `wg-quick`.                                                                                                                       |
+| 4     | Peer memory & single configuration \| v0.3.1-alpha            | ⚒️       | - **Remember the last peer list** across restarts, so a node comes back with its peers even while the coordination server is unreachable.<br>- **One configuration file** instead of separate standalone and coordinated modes: a coordination server, manually listed peers, or both. |
+| 5     | windows support                                               | ⚒️       | -                                                                                                                                                                                                                                                                                      |
+| 6     | Security, features and stability improvements \| v0.3.2-alpha | ⚒️       | - **Protocol and communication improvements.**<br>- **Native HTTPS support.**<br>- **Optimizations (e.g. the IP allocation mechanism and database iterations)**<br>                                                                                                                    |
+| 7     | Relay                                                         | -        | - **Last-resort relay** for peers that genuinely cannot reach each other. (Even then, relayed packets stay sealed and end-to-end encrypted, unreadable by the relay.)                                                                                                                  |
+| 8     | NAT support                                                   | -        | -                                                                                                                                                                                                                                                                                      |
+| 9     | Redundant control-plane coordination                          | -        | - **Multiple coordination servers**, so the control plane has no single point of failure.                                                                                                                                                                                              |
+| 10    | Identity & access management                                  | -        | - **Per-machine credentials, leases and revocation**, replacing the single shared join token and realising the "access is a lease" principle.                                                                                                                                          |
+| 11    | Management console (UI)                                       | -        | -                                                                                                                                                                                                                                                                                      |
+| 12    | Hardening                                                     | -        | -                                                                                                                                                                                                                                                                                      |
+
 ## Contributing
 
 This is a student-driven project, and contributions are genuinely welcome: bug reports, suggestions, design critique, and documentation just as much as code.
