@@ -171,7 +171,7 @@ func (d *Daemon) loadPeers() {
 		d.log.Printf("%d synced peer(s) in %s are not used because server_url is not set; change their source to %q to keep them",
 			n, d.configPath, peerbook.Static)
 	default:
-		d.log.Printf("using %d remembered server peer(s) until the server answers", n)
+		d.log.Printf("using %d remembered synced peer(s) until the server answers", n)
 	}
 }
 
@@ -418,7 +418,8 @@ func (d *Daemon) applyPeers(addr netip.Prefix) error {
 	if err != nil {
 		return err
 	}
-	if ch != (wg.Changes{}) {
+	// Settings changes are logged where they happen (useEdits, ensureTunnel).
+	if ch.Added+ch.Updated+ch.Removed > 0 {
 		d.log.Printf("synced %s: %d added, %d updated, %d removed",
 			wg.TunnelName, ch.Added, ch.Updated, ch.Removed)
 	}
@@ -513,7 +514,8 @@ func (d *Daemon) tunnelStopped() <-chan struct{} {
 	return d.tun.Stopped()
 }
 
-// dropDeadTunnel forgets a tunnel that was shut down from outside meshd,
+// dropDeadTunnel forgets a tunnel that was shut down from outside meshd, so
+// this pass creates it again.
 func (d *Daemon) dropDeadTunnel() {
 	select {
 	case <-d.tunnelStopped():

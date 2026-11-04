@@ -141,7 +141,7 @@ func askPeers(reader *bufio.Reader, cfg *Config_file) {
 			continue
 		}
 
-		ips := askUntilValid(reader, "	AllowedIPs (e.g. 10.0.0.2/32, 192.168.1.0/24): ", false, validateAllowedIPs)
+		ips := askUntilValid(reader, "  AllowedIPs (e.g. 10.0.0.2/32, 192.168.1.0/24): ", false, validateAllowedIPs)
 
 		end := askUntilValid(reader, "  Endpoint (e.g. 192.168.56.102:51820) (leave empty if this peer has no fixed address): ", true, validateEndpoint)
 

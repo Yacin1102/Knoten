@@ -196,7 +196,6 @@ meshd: registering with http://198.51.100.10:8080
 meshd: registered: our VPN address is 10.10.0.3/16
 meshd: the server sees us at 203.0.113.5:51820
 meshd: brought knoten-wg up with address 10.10.0.3/16
-meshd: synced knoten-wg: 0 added, 0 updated, 0 removed
 ```
 
 #### 3. Join the rest of the fleet
