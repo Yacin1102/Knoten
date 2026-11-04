@@ -187,7 +187,7 @@ meshd: generated key pair; this machine's PUBLIC key is: 9Kx...=
 meshd: coordination server: http://198.51.100.10:8080
 meshd: this machine: "node-1", public key 9Kx...=
 meshd: registering with http://198.51.100.10:8080
-meshd: registered: our VPN address is 10.10.0.2 in 10.10.0.0/16
+meshd: registered: our VPN address is 10.10.0.3 in 10.10.0.0/16
 meshd: brought knoten-wg up
 meshd: synced knoten-wg: 0 added, 0 updated, 0 removed
 ```
@@ -220,7 +220,7 @@ curl -s http://<server IP>:8080/v1/health
 sudo wg show knoten-wg 
 
 # Can you reach a peer over the mesh?
-ping 10.10.0.3
+ping 10.10.0.4
 ```
 
 Send `SIGHUP` to any daemon to force an immediate sync instead of waiting for the next poll:

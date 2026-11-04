@@ -1,4 +1,7 @@
-package wg
+// Package key is WireGuard's key format: 32 bytes, written as base64 for
+// people, files and the server, and as hex for the device protocol.
+
+package key
 
 import (
 	"crypto/ecdh"
@@ -6,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 const KeyLen = 32
@@ -42,7 +46,7 @@ func (k Key) String() string {
 	return base64.StdEncoding.EncodeToString(k[:])
 }
 
-// hex returns the key the way the device protocol wants it.
+// KeyInHex returns the key the way the device protocol wants it.
 func (k Key) KeyInHex() string {
 	return hex.EncodeToString(k[:])
 }
@@ -54,7 +58,7 @@ func (k Key) IsZero() bool {
 
 // ParseKey reads a base64 key
 func ParseKey(s string) (Key, error) {
-	b, err := base64.StdEncoding.DecodeString(s)
+	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
 	if err != nil {
 		return Key{}, fmt.Errorf("key is not valid base64: %w", err)
 	}
@@ -62,4 +66,19 @@ func ParseKey(s string) (Key, error) {
 		return Key{}, fmt.Errorf("key is %d bytes, want %d", len(b), KeyLen)
 	}
 	return Key(b), nil
+}
+
+// MarshalText writes the key as base64, so JSON files show "hI3x...=".
+func (k Key) MarshalText() ([]byte, error) {
+	return []byte(k.String()), nil
+}
+
+// UnmarshalText reads a base64 key, so JSON files can hold keys as text.
+func (k *Key) UnmarshalText(text []byte) error {
+	parsed, err := ParseKey(string(text))
+	if err != nil {
+		return err
+	}
+	*k = parsed
+	return nil
 }
