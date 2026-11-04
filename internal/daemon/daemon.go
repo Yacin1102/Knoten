@@ -68,7 +68,7 @@ func New(cfg Config_file, configPath string, logger *log.Logger) (*Daemon, error
 	return d, nil
 }
 
-// Run keeps the tunnel matching the peer book until ctx is cancelled. 
+// Run keeps the tunnel matching the peer book until ctx is cancelled.
 // bringUpToDate runs every tick, when a sync is due, on SIGHUP, and when the tunnel stops.
 func (d *Daemon) Run(ctx context.Context, syncNow <-chan struct{}) error {
 	d.loadPeers()
@@ -371,7 +371,7 @@ func peerFromServer(p protocol.Peer) (peerbook.Peer, error) {
 	return peer, nil
 }
 
-// ensureTunnel opens the tunnel if there is none, and recreates it if the machine's address changed 
+// ensureTunnel opens the tunnel if there is none, and recreates it if the machine's address changed
 // (the server re-registered the machines, or it was manually edited).
 func (d *Daemon) ensureTunnel(addr netip.Prefix) error {
 	if d.tun != nil && d.tunAddr != addr {
@@ -548,8 +548,8 @@ func addressWithPrefix(ip netip.Addr, cidr netip.Prefix) netip.Prefix {
 
 // quietLog logs a problem that comes back on every pass only once, and
 // again only when the message changes or after Clear.
-type quietLog struct{ 
-	last string 
+type quietLog struct {
+	last string
 }
 
 func (q *quietLog) Printf(l *log.Logger, format string, args ...any) {

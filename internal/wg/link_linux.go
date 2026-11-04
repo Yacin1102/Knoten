@@ -63,11 +63,11 @@ func OpenTunnel(addr netip.Prefix, mtu int, logf func(format string, args ...any
 	logger := &device.Logger{
 		Verbosef: device.DiscardLogf,
 		Errorf: func(format string, args ...any) {
-				msg := fmt.Sprintf(format, args...)
-				if strings.Contains(msg, "no known endpoint for peer") {
-					return // normal for a peer without an endpoint
-				}
-				logf("wireguard: %s", msg)
+			msg := fmt.Sprintf(format, args...)
+			if strings.Contains(msg, "no known endpoint for peer") {
+				return // normal for a peer without an endpoint
+			}
+			logf("wireguard: %s", msg)
 		},
 	}
 

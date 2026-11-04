@@ -6,8 +6,8 @@ package wg
 
 import (
 	"fmt"
-	"strings"
 	"slices"
+	"strings"
 	"time"
 
 	"knoten/internal/key"

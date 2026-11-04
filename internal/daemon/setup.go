@@ -13,6 +13,7 @@ import (
 	"knoten/internal/protocol"
 	"knoten/internal/wg"
 )
+
 const ExampleServerURL = "http://coord.example.com:8443"
 
 func ask(reader *bufio.Reader, question string) string {
@@ -74,13 +75,13 @@ func Setup(configPath string, force bool) error {
 	askServer(reader, &cfg)
 
 	if !cfg.UsesServer() {
-		cfg.Address, _ = netip.ParsePrefix(askUntilValid(reader,"This machine's VPN address (e.g. 10.0.0.1/24): ", false, validateCIDRAddress))
+		cfg.Address, _ = netip.ParsePrefix(askUntilValid(reader, "This machine's VPN address (e.g. 10.0.0.1/24): ", false, validateCIDRAddress))
 		fmt.Println()
 	}
 
 	askPeers(reader, &cfg)
 
-	cfg.Name = askUntilValid(reader,  fmt.Sprintf("Name for this machine (leave empty for %q): ", cfg.MachineName()), true, protocol.ValidateName)
+	cfg.Name = askUntilValid(reader, fmt.Sprintf("Name for this machine (leave empty for %q): ", cfg.MachineName()), true, protocol.ValidateName)
 	fmt.Println()
 
 	cfg.PrivateKey = key.GenerateKeyPair().PrivateKey
@@ -108,7 +109,7 @@ func askServer(reader *bufio.Reader, cfg *Config_file) {
 	fmt.Println("want to list every peer yourself.")
 	fmt.Println()
 
-	cfg.ServerURL = askUntilValid(reader,fmt.Sprintf("Coordination server URL (e.g. %s, leave empty for none): ", ExampleServerURL), true, validateServerURL)
+	cfg.ServerURL = askUntilValid(reader, fmt.Sprintf("Coordination server URL (e.g. %s, leave empty for none): ", ExampleServerURL), true, validateServerURL)
 
 	if cfg.UsesServer() {
 		cfg.JoinToken = ask(reader, "Join token (leave empty if the server does not require one): ")

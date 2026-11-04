@@ -72,7 +72,6 @@ func ValidatePublicKey(s string) error {
 	return nil
 }
 
-
 func ValidateListenPort(p int) error {
 	if p < 1 || p > 65535 {
 		return fmt.Errorf("listen port %d is out of range 1-65535", p)
