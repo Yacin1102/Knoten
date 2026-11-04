@@ -21,8 +21,6 @@ const DefaultKnotenDir = "/etc/knoten"
 
 const DefaultConfigPath = DefaultKnotenDir + "/meshd.json"
 
-const DefaultTokenPath = DefaultKnotenDir + "/token"
-
 // Config_file is meshd.json, the only file meshd keeps. the user can write the
 // settings and static and blocked peers. meshd writes its own parts.
 type Config_file struct {

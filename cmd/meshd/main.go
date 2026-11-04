@@ -22,18 +22,9 @@ func main() {
 
 	showKey := flag.Bool("show-key", false, "print this machine's WireGuard public key and exit")
 
-	printDefault := flag.Bool("print-default-config", false, "print a configuration template to stdout and exit")
-
 	flag.Parse()
 
 	logger := log.New(os.Stderr, "meshd: ", log.LstdFlags)
-
-	if *printDefault {
-		if err := daemon.PrintDefaultConfig(); err != nil {
-			fatalf(logger, "%v", err)
-		}
-		return
-	}
 
 	if *showKey {
 		if err := showPublicKey(*configPath); err != nil {

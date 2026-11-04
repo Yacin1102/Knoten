@@ -13,6 +13,7 @@ import (
 	"knoten/internal/protocol"
 	"knoten/internal/wg"
 )
+const ExampleServerURL = "http://coord.example.com:8443"
 
 func ask(reader *bufio.Reader, question string) string {
 	fmt.Print(question)
@@ -63,13 +64,8 @@ func Setup(configPath string, force bool) error {
 	fmt.Printf("Interface %s\n", wg.TunnelName)
 	fmt.Println()
 
-	portAnswer := askUntilValid(reader, fmt.Sprintf("ListenPort (default %d): ", cfg.ListenPort), true, func(s string) error {
-		n, err := strconv.Atoi(s)
-		if err != nil {
-			return fmt.Errorf("%q is not a number", s)
-		}
-		return protocol.ValidateListenPort(n)
-	})
+	portAnswer := askUntilValid(reader, fmt.Sprintf("ListenPort (default %d): ", cfg.ListenPort), true, validateListenPort)
+
 	if portAnswer != "" {
 		cfg.ListenPort, _ = strconv.Atoi(portAnswer)
 	}
@@ -78,16 +74,13 @@ func Setup(configPath string, force bool) error {
 	askServer(reader, &cfg)
 
 	if !cfg.UsesServer() {
-		cfg.Address, _ = netip.ParsePrefix(askUntilValid(reader,
-			"This machine's VPN address (e.g. 10.0.0.1/24): ", false, validateCIDRAddress))
+		cfg.Address, _ = netip.ParsePrefix(askUntilValid(reader,"This machine's VPN address (e.g. 10.0.0.1/24): ", false, validateCIDRAddress))
 		fmt.Println()
 	}
 
 	askPeers(reader, &cfg)
 
-	cfg.Name = askUntilValid(reader,
-		fmt.Sprintf("Name for this machine (leave empty for %q): ", cfg.MachineName()), true,
-		protocol.ValidateName)
+	cfg.Name = askUntilValid(reader,  fmt.Sprintf("Name for this machine (leave empty for %q): ", cfg.MachineName()), true, protocol.ValidateName)
 	fmt.Println()
 
 	cfg.PrivateKey = key.GenerateKeyPair().PrivateKey
@@ -101,11 +94,11 @@ func Setup(configPath string, force bool) error {
 
 	fmt.Printf("Config written to %s\n", configPath)
 	fmt.Printf("This machine's public key: %s\n", cfg.PrivateKey.PublicKey())
+	fmt.Println("To change settings or peers later, edit that file; the README explains each field.")
+	fmt.Println("https://github.com/Yacin1102/Knoten")
 	fmt.Println()
 	return nil
 }
-
-const ExampleServerURL = "https://coord.example.com:8443"
 
 // askServer asks for an optional coordination server. With one, the server
 // gives this machine its address and keeps the synced peers up to date.
@@ -115,9 +108,7 @@ func askServer(reader *bufio.Reader, cfg *Config_file) {
 	fmt.Println("want to list every peer yourself.")
 	fmt.Println()
 
-	cfg.ServerURL = askUntilValid(reader,
-		fmt.Sprintf("Coordination server URL (e.g. %s, leave empty for none): ", ExampleServerURL), true,
-		validateServerURL)
+	cfg.ServerURL = askUntilValid(reader,fmt.Sprintf("Coordination server URL (e.g. %s, leave empty for none): ", ExampleServerURL), true, validateServerURL)
 
 	if cfg.UsesServer() {
 		cfg.JoinToken = ask(reader, "Join token (leave empty if the server does not require one): ")
@@ -130,8 +121,9 @@ func askServer(reader *bufio.Reader, cfg *Config_file) {
 // one they come in addition to the server's.
 func askPeers(reader *bufio.Reader, cfg *Config_file) {
 	if cfg.UsesServer() {
-		fmt.Println("The server will send the other machines. You can also add peers by hand,")
-		fmt.Println("for example one that does not use this server.")
+		fmt.Println("The server will send the list of other machines. You can also add peers")
+		fmt.Println("by hand (leave the public key empty to skip this step).")
+
 	} else {
 		fmt.Println("List the machines this one should connect to.")
 	}
@@ -149,7 +141,7 @@ func askPeers(reader *bufio.Reader, cfg *Config_file) {
 			continue
 		}
 
-		ips := askUntilValid(reader, "  AllowedIPs (e.g. 10.0.0.2/32): ", false, validateAllowedIPs)
+		ips := askUntilValid(reader, "	AllowedIPs (e.g. 10.0.0.2/32, 192.168.1.0/24): ", false, validateAllowedIPs)
 
 		end := askUntilValid(reader, "  Endpoint (e.g. 192.168.56.102:51820) (leave empty if this peer has no fixed address): ", true, validateEndpoint)
 
@@ -178,6 +170,14 @@ func parsePrefixList(s string) []netip.Prefix {
 		out = append(out, p)
 	}
 	return out
+}
+
+func validateListenPort(s string) error {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("%q is not a number", s)
+	}
+	return protocol.ValidateListenPort(n)
 }
 
 func validateServerURL(s string) error {
@@ -215,36 +215,6 @@ func validateAllowedIPs(s string) error {
 			return err
 		}
 	}
-	return nil
-}
-
-func PrintDefaultConfig() error {
-	cfg := DefaultConfig()
-	cfg.ServerURL = ExampleServerURL
-	cfg.TokenFile = DefaultTokenPath
-
-	fmt.Fprintln(os.Stderr, "# meshd configuration template. Edit and save as "+DefaultConfigPath)
-	fmt.Fprintln(os.Stderr, "#")
-	fmt.Fprintln(os.Stderr, "#   server_url               a coordination server to get peers and an address from,")
-	fmt.Fprintln(os.Stderr, "#                            including http:// or https://; remove it to run without one")
-	fmt.Fprintln(os.Stderr, "#   token_file               a 0600 file holding the shared join token")
-	fmt.Fprintln(os.Stderr, "#                            (preferred over putting the token in this file)")
-	fmt.Fprintln(os.Stderr, "#   address                  required without server_url; with one, meshd writes it")
-	fmt.Fprintln(os.Stderr, "#   persistent_keepalive     25 keeps NAT mappings open; 0 disables the line")
-	fmt.Fprintln(os.Stderr, "#   peers                    add your own with \"source\": \"static\"; meshd adds the")
-	fmt.Fprintln(os.Stderr, "#                            server's as \"source\": \"synced\". List each public_key")
-	fmt.Fprintln(os.Stderr, "#                            once: to pin or block a synced peer, change its source")
-	fmt.Fprintln(os.Stderr, "#                            to \"static\" or \"blocked\"")
-	fmt.Fprintln(os.Stderr, "#")
-	fmt.Fprintln(os.Stderr, "# meshd also writes private_key into this file.")
-	fmt.Fprintln(os.Stderr, "# Edits are picked up within a few seconds while meshd runs.")
-	fmt.Fprintln(os.Stderr, "")
-
-	data, err := marshalConfig(cfg)
-	if err != nil {
-		return err
-	}
-	fmt.Print(string(data))
 	return nil
 }
 
