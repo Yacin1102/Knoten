@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strings"
 
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
@@ -62,7 +63,11 @@ func OpenTunnel(addr netip.Prefix, mtu int, logf func(format string, args ...any
 	logger := &device.Logger{
 		Verbosef: device.DiscardLogf,
 		Errorf: func(format string, args ...any) {
-			logf("wireguard: "+format, args...)
+				msg := fmt.Sprintf(format, args...)
+				if strings.Contains(msg, "no known endpoint for peer") {
+					return // normal for a peer without an endpoint
+				}
+				logf("wireguard: %s", msg)
 		},
 	}
 

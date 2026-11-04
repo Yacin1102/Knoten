@@ -1,10 +1,11 @@
 package protocol
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
+
+	"knoten/internal/key"
 )
 
 const (
@@ -64,16 +65,13 @@ func ValidatePublicKey(s string) error {
 		return ErrEmptyKey
 	}
 
-	b, err := base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		return fmt.Errorf("public key is not valid base64: %w", err)
-	}
-	if len(b) != 32 {
-		return fmt.Errorf("public key is %d bytes, want 32", len(b))
+	if _, err := key.ParseKey(s); err != nil {
+		return fmt.Errorf("public key is invalid: %w", err)
 	}
 
 	return nil
 }
+
 
 func ValidateListenPort(p int) error {
 	if p < 1 || p > 65535 {

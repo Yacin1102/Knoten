@@ -5,14 +5,14 @@ package wg
 // and are only turned into strings at the edges, when stored or sent.
 
 import (
-	"fmt"
 	"net/netip"
-	"strings"
 	"time"
+
+	"knoten/internal/key"
 )
 
 type Interface struct {
-	PrivateKey Key
+	PrivateKey key.Key
 	Address    netip.Prefix
 	ListenPort int
 	MTU        int
@@ -21,7 +21,7 @@ type Interface struct {
 // Peer is one remote machine the tunnel talks to.
 type Peer struct {
 	Name                string
-	PublicKey           Key
+	PublicKey           key.Key
 	AllowedIPs          []netip.Prefix
 	Endpoint            netip.AddrPort
 	PersistentKeepalive time.Duration
@@ -31,36 +31,4 @@ type Peer struct {
 type Config struct {
 	Interface Interface
 	Peers     []Peer
-}
-
-// ParsePeer builds a Peer from the string form used by the config file and the server protocol.
-// allowedIPs is a comma-separated list of prefixes.
-func ParsePeer(name, publicKey, allowedIPs, endpoint string, keepaliveSeconds int) (Peer, error) {
-	key, err := ParseKey(strings.TrimSpace(publicKey))
-	if err != nil {
-		return Peer{}, fmt.Errorf("public key: %w", err)
-	}
-
-	p := Peer{
-		Name:                name,
-		PublicKey:           key,
-		PersistentKeepalive: time.Duration(keepaliveSeconds) * time.Second,
-	}
-
-	for _, s := range strings.Split(allowedIPs, ",") {
-		prefix, err := netip.ParsePrefix(strings.TrimSpace(s))
-		if err != nil {
-			return Peer{}, fmt.Errorf("allowed IP %q: %w", s, err)
-		}
-		p.AllowedIPs = append(p.AllowedIPs, prefix.Masked())
-	}
-
-	if endpoint = strings.TrimSpace(endpoint); endpoint != "" {
-		p.Endpoint, err = netip.ParseAddrPort(endpoint)
-		if err != nil {
-			return Peer{}, fmt.Errorf("endpoint %q: %w", endpoint, err)
-		}
-	}
-
-	return p, nil
 }

@@ -1,14 +1,18 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"knoten/internal/key"
+	"knoten/internal/peerbook"
 	"knoten/internal/protocol"
 	"knoten/internal/wg"
 )
@@ -19,42 +23,36 @@ const DefaultConfigPath = DefaultKnotenDir + "/meshd.json"
 
 const DefaultTokenPath = DefaultKnotenDir + "/token"
 
-const DefaultStatePath = "/var/lib/knoten/meshd-State_file.json"
-
-type StaticPeer struct {
-	Name       string `json:"name,omitempty"`
-	PublicKey  string `json:"public_key"`
-	AllowedIPs string `json:"allowed_ips"`
-	Endpoint   string `json:"endpoint,omitempty"`
-}
-
+// Config_file is meshd.json, the only file meshd keeps. the user can write the
+// settings and static and blocked peers. meshd writes its own parts.
 type Config_file struct {
-	UseCoordinationServer bool         `json:"use_coordination_server"`
-	ServerURL             string       `json:"server_url,omitempty"`
-	JoinToken             string       `json:"join_token,omitempty"`
-	TokenFile             string       `json:"token_file,omitempty"`
-	Name                  string       `json:"name,omitempty"`
-	ListenPort            int          `json:"listen_port"`
-	StatePath             string       `json:"state_path"`
-	Address               netip.Prefix `json:"address,omitempty"`
-	PersistentKeepalive   int          `json:"persistent_keepalive"`
-	MTU                   int          `json:"mtu,omitempty"`
-	StaticPeers           []StaticPeer `json:"static_peers,omitempty"`
+	ServerURL           string `json:"server_url,omitempty"`
+	JoinToken           string `json:"join_token,omitempty"`
+	TokenFile           string `json:"token_file,omitempty"`
+	Name                string `json:"name,omitempty"`
+	ListenPort          int    `json:"listen_port"`
+	PersistentKeepalive int    `json:"persistent_keepalive"`
+	MTU                 int    `json:"mtu,omitempty"`
+
+	// Written by meshd once, when it makes a new key.
+	PrivateKey key.Key `json:"private_key,omitzero"`
+
+	// Manually set without a server. With a server, meshd writes the one it assigned.
+	Address netip.Prefix `json:"address,omitzero"`
+
+	// "static" and "blocked" peers are manually set, "synced" peers are meshd's.
+	Peers []peerbook.Peer `json:"peers,omitempty"`
 }
 
-type State_file struct {
-	PrivateKey wg.Key       `json:"private_key"`
-	PublicKey  wg.Key       `json:"public_key"`
-	VPNIP      netip.Addr   `json:"vpn_ip,omitempty"`
-	VPNCIDR    netip.Prefix `json:"vpn_cidr,omitempty"`
+// UsesServer reports whether a coordination server is configured.
+func (c *Config_file) UsesServer() bool {
+	return c.ServerURL != ""
 }
 
 func DefaultConfig() Config_file {
 	return Config_file{
-		UseCoordinationServer: false,
-		ListenPort:            wg.DefaultListenPort,
-		StatePath:             DefaultStatePath,
-		PersistentKeepalive:   wg.DefaultKeepaliveSeconds,
+		ListenPort:          wg.DefaultListenPort,
+		PersistentKeepalive: wg.DefaultKeepaliveSeconds,
 	}
 }
 
@@ -67,16 +65,30 @@ func LoadConfig(path string) (Config_file, error) {
 		return Config_file{}, fmt.Errorf("could not read %s: %w", path, err)
 	}
 
+	cfg, err := parseConfig(data)
+	if err != nil {
+		return Config_file{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return cfg, nil
+}
+
+// parseConfig decodes meshd.json and checks it. Unknown fields are an error,
+// so a typo or a removed setting is reported instead of silently ignored.
+func parseConfig(data []byte) (Config_file, error) {
 	cfg := DefaultConfig()
 
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config_file{}, fmt.Errorf("%s is not valid JSON: %w", path, err)
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		return Config_file{}, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return Config_file{}, errors.New("unexpected text after the closing }")
 	}
 
 	if err := cfg.Validate(); err != nil {
-		return Config_file{}, fmt.Errorf("%s: %w", path, err)
+		return Config_file{}, err
 	}
-
 	return cfg, nil
 }
 
@@ -100,45 +112,61 @@ func SaveConfig(path string, cfg Config_file) error {
 
 func (c *Config_file) Validate() error {
 	c.ServerURL = strings.TrimSpace(c.ServerURL)
-	c.Name = c.MachineName()
 	c.JoinToken = strings.TrimSpace(c.JoinToken)
 
 	if c.ListenPort == 0 {
 		c.ListenPort = wg.DefaultListenPort
 	}
-	if c.StatePath == "" {
-		c.StatePath = DefaultStatePath
-	}
 
 	if err := protocol.ValidateListenPort(c.ListenPort); err != nil {
 		return fmt.Errorf("listen_port: %w", err)
 	}
-	if err := protocol.ValidateName(c.Name); err != nil {
+	if err := protocol.ValidateName(c.MachineName()); err != nil {
 		return fmt.Errorf("name: %w", err)
 	}
-
 	if c.PersistentKeepalive < 0 || c.PersistentKeepalive > 65535 {
 		return fmt.Errorf("persistent_keepalive %d is out of range 0-65535", c.PersistentKeepalive)
 	}
 
-	if c.UseCoordinationServer {
-		if c.ServerURL == "" {
-			return errors.New("use_coordination_server is true but server_url is empty")
+	if !c.UsesServer() && !c.Address.IsValid() {
+		return errors.New("without a server_url, a valid address must be set (e.g. \"10.0.0.1/24\")")
+	}
+
+	seen := map[key.Key]int{} // public key → index of the peer that has it
+
+	for i := range c.Peers {
+		p := &c.Peers[i]
+
+		if p.Source == "" {
+			p.Source = peerbook.Static
 		}
-	} else {
-		if !c.Address.IsValid() {
-			return errors.New("use_coordination_server is false, so a valid address must be set (e.g. \"10.0.0.1/24\")")
+		switch p.Source {
+		case peerbook.Static, peerbook.Synced, peerbook.Blocked:
+		default:
+			return fmt.Errorf("peers[%d] (%s): source must be %q, %q or %q, not %q",
+				i, p.Name, peerbook.Static, peerbook.Synced, peerbook.Blocked, p.Source)
 		}
-		for i, p := range c.StaticPeers {
-			if strings.TrimSpace(p.PublicKey) == "" {
-				return fmt.Errorf("static_peers[%d] has no public_key", i)
+
+		if p.PublicKey.IsZero() {
+			return fmt.Errorf("peers[%d] (%s) has no public_key", i, p.Name)
+		}
+		if first, ok := seen[p.PublicKey]; ok {
+			return fmt.Errorf("peers[%d] (%s): this public_key is already listed at peers[%d]; "+
+				"list each peer once and change its source to pin or block it", i, p.Name, first)
+		}
+		seen[p.PublicKey] = i
+
+		if p.Source == peerbook.Blocked {
+			continue
+		}
+		if len(p.AllowedIPs) == 0 {
+			return fmt.Errorf("peers[%d] (%s) has no allowed_ips", i, p.Name)
+		}
+		for j, ip := range p.AllowedIPs {
+			if !ip.IsValid() {
+				return fmt.Errorf("peers[%d] (%s): allowed_ips[%d] is not valid", i, p.Name, j)
 			}
-			if err := protocol.ValidatePublicKey(p.PublicKey); err != nil {
-				return fmt.Errorf("static_peers[%d].public_key: %w", i, err)
-			}
-			if strings.TrimSpace(p.AllowedIPs) == "" {
-				return fmt.Errorf("static_peers[%d] (%s) has no allowed_ips", i, p.Name)
-			}
+			p.AllowedIPs[j] = ip.Masked()
 		}
 	}
 
@@ -171,33 +199,6 @@ func (c *Config_file) MachineName() string {
 		return "unnamed-machine"
 	}
 	return host
-}
-
-func LoadState(path string) (State_file, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return State_file{}, nil
-		}
-		return State_file{}, fmt.Errorf("could not read the state file %s: %w", path, err)
-	}
-
-	var st State_file
-	if err := json.Unmarshal(data, &st); err != nil {
-		return State_file{}, fmt.Errorf("the state file %s is corrupted (%w); if you delete it this machine will get a NEW identity and a NEW VPN address", path, err)
-	}
-
-	return st, nil
-}
-
-func SaveState(path string, st State_file) error {
-	data, err := json.MarshalIndent(st, "", "  ")
-	if err != nil {
-		return fmt.Errorf("could not encode the state: %w", err)
-	}
-	data = append(data, '\n')
-
-	return WriteAtomic(path, string(data), 0o600)
 }
 
 func WriteAtomic(path string, content string, perm os.FileMode) error {

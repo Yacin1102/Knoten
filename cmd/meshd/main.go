@@ -18,7 +18,7 @@ func main() {
 
 	setup := flag.Bool("setup", false, "ask the configuration questions interactively and write the config file")
 
-	force := flag.Bool("force", false, "with -setup: overwrite an existing config (WARNING: this machine keeps its key, but re-check your answers)")
+	force := flag.Bool("force", false, "with -setup: overwrite an existing config (WARNING: this gives the machine a NEW key)")
 
 	showKey := flag.Bool("show-key", false, "print this machine's WireGuard public key and exit")
 
@@ -56,7 +56,7 @@ func main() {
 		fatalf(logger, "%v", err)
 	}
 
-	d, err := daemon.New(cfg, logger)
+	d, err := daemon.New(cfg, *configPath, logger)
 	if err != nil {
 		fatalf(logger, "%v", err)
 	}
@@ -69,19 +69,19 @@ func main() {
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
 
-	refresh := make(chan struct{}, 1)
+	syncNow := make(chan struct{}, 1)
 	go func() {
 		for range hup {
-			logger.Printf("SIGHUP received; syncing now")
+			logger.Printf("SIGHUP received; checking the config and syncing now")
 			select {
-			case refresh <- struct{}{}:
+			case syncNow <- struct{}{}:
 			default:
 			}
 		}
 	}()
 
 	// RUN
-	if err := d.Run(ctx, refresh); err != nil {
+	if err := d.Run(ctx, syncNow); err != nil {
 		fatalf(logger, "%v", err)
 	}
 
@@ -94,18 +94,11 @@ func showPublicKey(configPath string) error {
 		return err
 	}
 
-	st, err := daemon.LoadState(cfg.StatePath)
-	if err != nil {
-		return err
+	if cfg.PrivateKey.IsZero() {
+		return fmt.Errorf("no key yet in %s; run meshd once to generate one", configPath)
 	}
 
-	if st.PrivateKey.IsZero() {
-		return fmt.Errorf("no key yet at %s; run meshd once to generate one", cfg.StatePath)
-	}
-
-	pub := st.PrivateKey.PublicKey().String()
-
-	fmt.Println(pub)
+	fmt.Println(cfg.PrivateKey.PublicKey())
 	return nil
 }
 

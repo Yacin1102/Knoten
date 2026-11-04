@@ -7,9 +7,10 @@ package wg
 import (
 	"fmt"
 	"strings"
-
 	"slices"
 	"time"
+
+	"knoten/internal/key"
 )
 
 const DefaultListenPort = 51820
@@ -54,7 +55,7 @@ func diff(applied, want Config) (string, Changes) {
 		ch.Interface = true
 	}
 
-	before := make(map[Key]Peer, len(applied.Peers))
+	before := make(map[key.Key]Peer, len(applied.Peers))
 	for _, p := range applied.Peers {
 		before[p.PublicKey] = p
 	}
@@ -74,8 +75,8 @@ func diff(applied, want Config) (string, Changes) {
 		p.writeTo(&b)
 	}
 
-	for key := range before {
-		fmt.Fprintf(&b, "public_key=%s\nremove=true\n", key.KeyInHex())
+	for pub := range before {
+		fmt.Fprintf(&b, "public_key=%s\nremove=true\n", pub.KeyInHex())
 		ch.Removed++
 	}
 
