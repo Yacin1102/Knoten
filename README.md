@@ -10,6 +10,7 @@
   <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-orange.svg">
   <img alt="Built on WireGuard" src="https://img.shields.io/badge/built%20on-WireGuard-88171A.svg">
 </p>
+
 ---
 
 Knoten connects your machines (servers, cloud instances, VMs, laptops) over **direct, end-to-end encrypted WireGuard tunnels**, instead of funnelling every packet through one central VPN server.
