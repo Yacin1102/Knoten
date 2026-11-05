@@ -21,8 +21,6 @@ A coordination server may exist, but it only handles **discovery, identity, and 
   <img src="./assets/Knoten_demo.gif" alt="Knoten_demo.gif">
 </p>
 
-*This demo was recorded with the previous version (`v0.2.0-alpha`). Using Knoten works the same way; the change is under the hood: `meshd` used to write a WireGuard config file and hand it to the kernel module through `wg` and `wg-quick`, and now it runs WireGuard itself through an embedded [wireguard-go](https://pkg.go.dev/golang.zx2c4.com/wireguard). Some log lines differ, and stopping `meshd` now removes the tunnel. You can still check the tunnel with `sudo wg show knoten-wg` if `wireguard-tools` is installed.*
-
 > [!IMPORTANT]
 > **New: one config file and peer memory.** Each node keeps its settings, its key and its peers in a single file, `/etc/knoten/meshd.json`. Peers from the coordination server are saved there too, so a restarted node has them right away, even while the server is unreachable. A node can use a coordination server, peers you list yourself, or both.
 
