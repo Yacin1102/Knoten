@@ -21,8 +21,9 @@ A coordination server may exist, but it only handles **discovery, identity, and 
   <img src="./assets/Knoten_demo.gif" alt="Knoten_demo.gif">
 </p>
 
-> [!IMPORTANT]
-> **New: one config file and peer memory.** Each node keeps its settings, its key and its peers in a single file, `/etc/knoten/meshd.json`. Peers from the coordination server are saved there too, so a restarted node has them right away, even while the server is unreachable. A node can use a coordination server, peers you list yourself, or both.
+> [!IMPORTANT] Ongoing development
+> **IPv6 addresses derived from each machine's public key, subnet and meshID**, so its address follows from its identity. **No address assignment by the coordination server**.
+
 
 > [!NOTE]
 > Status: **Alpha** (latest version `v0.3.1-alpha`)
@@ -350,7 +351,7 @@ As a student, I am constantly **learning while building** Knoten. This is the pr
 | 2     | Coordination server \| v0.2.0-alpha                     | ✅        | -                                                                                                                                                                                                                                                                                      |
 | 3     | Wg-go + Light optimizations \| v0.3.0-alpha             | ✅        | - **Embed Wireguard into knoten through wg-go package**, replacing the config file writing mechanism.<br>- Replace the current shell-out to `wg` and `wg-quick`.                                                                                                                       |
 | 4     | Peer memory & single configuration file \| v0.3.1-alpha | ✅        | - **Remember the last peer list** across restarts, so a node comes back with its peers even while the coordination server is unreachable.<br>- **One configuration file** instead of separate standalone and coordinated modes: a coordination server, manually listed peers, or both. |
-| 5     | IPv6 migration \| v0.3.2-alpha                          | 🔨       | - **IPv6 addresses derived from each machine's public key**, so its address follows from its identity.<br>- **No address assignment by the coordination server**, one step towards needing it less.                                                                                    |
+| 5     | IPv6 migration \| v0.3.2-alpha                          | 🔨       | - **IPv6 addresses derived from each machine's public key, subnet and meshID**, so its address follows from its identity.<br>- **No address assignment by the coordination server**, one step towards needing it less.                                                                 |
 | 6     | windows support                                         | -        | -                                                                                                                                                                                                                                                                                      |
 | 7     | Relay                                                   | -        | - **Last-resort relay** for peers that genuinely cannot reach each other. (Even then, relayed packets stay sealed and end-to-end encrypted, unreadable by the relay.)                                                                                                                  |
 | 8     | NAT support                                             | -        | -                                                                                                                                                                                                                                                                                      |
