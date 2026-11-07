@@ -33,6 +33,7 @@ type SyncRequest struct {
 	PublicKey  string `json:"public_key"`
 	ListenPort int    `json:"listen_port"`
 	Subnet     string `json:"subnet"`
+	Network    string `json:"network"` // the first 48 bits of the sender's address
 
 	JoinToken string `json:"join_token,omitempty"`
 }
@@ -41,6 +42,7 @@ type Peer struct {
 	PublicKey string `json:"public_key"`
 	Name      string `json:"name"`
 	Subnet    string `json:"subnet"`
+	Network   string `json:"network"`
 	Endpoint  string `json:"endpoint"`
 	LastSeen  int64  `json:"last_seen"`
 }

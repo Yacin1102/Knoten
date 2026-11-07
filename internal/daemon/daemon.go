@@ -314,7 +314,14 @@ func (d *Daemon) syncRequest() protocol.SyncRequest {
 		PublicKey:  d.pub.String(),
 		ListenPort: d.cfg.ListenPort,
 		Subnet:     d.cfg.Subnet,
+		Network:    d.network(),
 	}
+}
+
+// network is this machine's network part (fd + mesh hash) as a /48. Peers
+// from the server are only used if theirs is the same.
+func (d *Daemon) network() string {
+	return netip.PrefixFrom(d.addr, ip6gen.NetworkBits).Masked().String()
 }
 
 func (d *Daemon) register(ctx context.Context) error {
@@ -338,11 +345,15 @@ func (d *Daemon) register(ctx context.Context) error {
 	return nil
 }
 
-// serverPeers turns the server's peer list into peer book entries,
-// skipping any the server sent in a broken form.
+// serverPeers turns the server's peer list into peer book entries, skipping
+// peers of other meshes and any the server sent in a broken form.
 func (d *Daemon) serverPeers(list []protocol.Peer) []peerbook.Peer {
 	out := make([]peerbook.Peer, 0, len(list))
+	own := d.network()
 	for _, p := range list {
+		if p.Network != own {
+			continue // a machine of another mesh on the same server
+		}
 		peer, err := peerFromServer(p)
 		if err != nil {
 			d.log.Printf("skipping peer %q from the server: %v", p.Name, err)
