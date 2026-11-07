@@ -20,19 +20,19 @@ type RegisterRequest struct {
 	PublicKey  string `json:"public_key"`
 	Name       string `json:"name"`
 	ListenPort int    `json:"listen_port"`
+	Subnet     string `json:"subnet"`
 
 	JoinToken string `json:"join_token,omitempty"`
 }
 
 type RegisterResponse struct {
-	VPNIP    string `json:"vpn_ip"`
-	VPNCIDR  string `json:"vpn_cidr"`
 	Endpoint string `json:"endpoint"`
 }
 
 type SyncRequest struct {
 	PublicKey  string `json:"public_key"`
 	ListenPort int    `json:"listen_port"`
+	Subnet     string `json:"subnet"`
 
 	JoinToken string `json:"join_token,omitempty"`
 }
@@ -40,13 +40,12 @@ type SyncRequest struct {
 type Peer struct {
 	PublicKey string `json:"public_key"`
 	Name      string `json:"name"`
-	VPNIP     string `json:"vpn_ip"`
+	Subnet    string `json:"subnet"`
 	Endpoint  string `json:"endpoint"`
 	LastSeen  int64  `json:"last_seen"`
 }
 
 type SyncResponse struct {
-	Self                Peer   `json:"self"`
 	Peers               []Peer `json:"peers"`
 	SyncIntervalSeconds int    `json:"sync_interval_seconds"`
 }

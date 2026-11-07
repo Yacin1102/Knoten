@@ -9,10 +9,12 @@ import (
 	"math/rand"
 	"net/netip"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	"knoten/internal/client"
+	"knoten/internal/ip6gen"
 	"knoten/internal/key"
 	"knoten/internal/peerbook"
 	"knoten/internal/protocol"
@@ -35,11 +37,16 @@ type Daemon struct {
 	book       *peerbook.Book
 	tun        *wg.Tunnel
 	tunAddr    netip.Prefix // the address the tunnel was opened with
-	backoff    time.Duration
-	nextSync   time.Time // when to sync next (zero means now)
-	unsaved    bool      // an address the server assigned is not in meshd.json yet
-	newKey     bool      // a key meshd just made is not in meshd.json yet
-	lastRead   []byte    // meshd.json as meshd last read or wrote it
+
+	addr  netip.Addr   // this machine's address
+	rules ip6gen.Rules // which peers' subnets are accepted
+	stale bool         // the peers or settings changed since the tunnel was last updated
+
+	backoff  time.Duration
+	nextSync time.Time // when to sync next (zero means now)
+
+	newKey   bool   // a key meshd just made is not in meshd.json yet
+	lastRead []byte // meshd.json as meshd last read or wrote it
 
 	fileProblem, applyProblem, saveProblem quietLog
 }
@@ -82,7 +89,7 @@ func (d *Daemon) Run(ctx context.Context, syncNow <-chan struct{}) error {
 	if d.cfg.UsesServer() {
 		d.log.Printf("coordination server: %s", d.cfg.ServerURL)
 	}
-	d.log.Printf("this machine: %q, public key %s", d.cfg.MachineName(), d.pub)
+	d.log.Printf("this machine: %q, public key %s, address %s", d.cfg.MachineName(), d.pub, d.addr)
 
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
@@ -125,21 +132,20 @@ func (d *Daemon) bringUpToDate(ctx context.Context) error {
 	return nil
 }
 
-// updateTunnel makes the tunnel match the peer book. Until the server assigns
-// an address there is no tunnel.
+// updateTunnel makes the tunnel match the peer book. The peers are only
+// checked and applied when something changed since the last update.
 func (d *Daemon) updateTunnel() error {
-	addr := d.cfg.Address
-	if !addr.IsValid() {
-		return nil
-	}
-
-	if err := d.ensureTunnel(addr); err != nil {
+	if err := d.ensureTunnel(); err != nil {
 		return err
 	}
-	if err := d.applyPeers(addr); err != nil {
+	if !d.stale {
+		return nil
+	}
+	if err := d.applyPeers(); err != nil {
 		d.applyProblem.Printf(d.log, "could not update %s (will retry): %v", wg.TunnelName, err)
 		return nil
 	}
+	d.stale = false
 	d.applyProblem.Clear()
 	return nil
 }
@@ -156,7 +162,14 @@ func (d *Daemon) ensureKey() error {
 		d.log.Printf("generated a new key for this machine")
 	}
 	d.pub = d.cfg.PrivateKey.PublicKey()
+	d.useAddress()
 	return nil
+}
+
+// useAddress computes this machine's address and rules from its key, mesh and subnets.
+func (d *Daemon) useAddress() {
+	d.addr = ip6gen.Address(d.cfg.Mesh, d.cfg.Subnet, d.pub)
+	d.rules = ip6gen.NewRules(d.cfg.Subnet, d.cfg.AcceptSubnets)
 }
 
 // loadPeers puts the peers in meshd.json in the book, so the tunnel has them,
@@ -211,13 +224,24 @@ func (d *Daemon) useEdits(cfg Config_file) {
 		d.cfg.PersistentKeepalive = cfg.PersistentKeepalive
 		changed = append(changed, "persistent_keepalive")
 	}
-	if !d.cfg.UsesServer() && cfg.Address != d.cfg.Address {
-		d.cfg.Address = cfg.Address
-		changed = append(changed, "address")
+	if cfg.Mesh != d.cfg.Mesh {
+		d.cfg.Mesh = cfg.Mesh
+		changed = append(changed, "mesh")
 	}
+	if cfg.Subnet != d.cfg.Subnet {
+		d.cfg.Subnet = cfg.Subnet
+		changed = append(changed, "subnet")
+	}
+	if !slices.Equal(cfg.AcceptSubnets, d.cfg.AcceptSubnets) {
+		d.cfg.AcceptSubnets = cfg.AcceptSubnets
+		changed = append(changed, "accept_subnets")
+	}
+
 	d.cfg.Name = cfg.Name
 
 	if len(changed) > 0 {
+		d.stale = true
+		d.useAddress()
 		d.log.Printf("%s changed: %s", d.configPath, strings.Join(changed, ", "))
 	}
 
@@ -225,6 +249,7 @@ func (d *Daemon) useEdits(cfg Config_file) {
 		cfg.TokenFile != d.cfg.TokenFile || cfg.MTU != d.cfg.MTU || cfg.PrivateKey != d.cfg.PrivateKey {
 		d.log.Printf("%s: changes to server_url, join_token, token_file, mtu or private_key take effect after a restart", d.configPath)
 	}
+
 }
 
 // syncDue fires when the next sync is due. Without a server it is nil, which never fires.
@@ -261,18 +286,14 @@ func (d *Daemon) syncIfDue(ctx context.Context) bool {
 	return true
 }
 
-// syncServer registers if needed, asks the server for the current peers and
-// puts them in the book. It returns how long the server wants until the next sync.
+// syncServer asks the server for the current peers, registering first if the
+// server does not know this machine, and puts them in the book. It returns how
+// long the server wants until the next sync.
 func (d *Daemon) syncServer(ctx context.Context) (time.Duration, error) {
-	if !d.cfg.Address.IsValid() {
-		if err := d.register(ctx); err != nil {
-			return 0, err
-		}
-	}
 
 	resp, err := d.http.Sync(ctx, d.syncRequest())
 	if errors.Is(err, protocol.ErrUnknownMachine) {
-		d.log.Printf("the coordination server does not know this machine any more, registering again")
+		d.log.Printf("the coordination server does not know this machine, registering")
 		if err := d.register(ctx); err != nil {
 			return 0, err
 		}
@@ -282,13 +303,9 @@ func (d *Daemon) syncServer(ctx context.Context) (time.Duration, error) {
 		return 0, err
 	}
 
-	if ip, err := netip.ParseAddr(resp.Self.VPNIP); err == nil && ip != d.cfg.Address.Addr() {
-		d.log.Printf("the server says our VPN address is %s (we had %s), accepting the server's answer",
-			ip, d.cfg.Address.Addr())
-		d.setAddress(netip.PrefixFrom(ip, d.cfg.Address.Bits()))
+	if d.book.SetFromServer(d.serverPeers(resp.Peers)) {
+		d.stale = true
 	}
-
-	d.book.SetFromServer(d.serverPeers(resp.Peers))
 	return time.Duration(resp.SyncIntervalSeconds) * time.Second, nil
 }
 
@@ -296,6 +313,7 @@ func (d *Daemon) syncRequest() protocol.SyncRequest {
 	return protocol.SyncRequest{
 		PublicKey:  d.pub.String(),
 		ListenPort: d.cfg.ListenPort,
+		Subnet:     d.cfg.Subnet,
 	}
 }
 
@@ -306,29 +324,18 @@ func (d *Daemon) register(ctx context.Context) error {
 		PublicKey:  d.pub.String(),
 		Name:       d.cfg.MachineName(),
 		ListenPort: d.cfg.ListenPort,
+		Subnet:     d.cfg.Subnet,
 	})
 	if err != nil {
 		return err
 	}
 
-	ip, err := netip.ParseAddr(resp.VPNIP)
-	if err != nil {
-		return fmt.Errorf("the server assigned an address that is not valid (%q): %w", resp.VPNIP, err)
-	}
-	cidr, _ := netip.ParsePrefix(resp.VPNCIDR)
-	d.setAddress(addressWithPrefix(ip, cidr))
+	d.log.Printf("registered")
 
-	d.log.Printf("registered: our VPN address is %s", d.cfg.Address)
 	if resp.Endpoint != "" {
 		d.log.Printf("the server sees us at %s", resp.Endpoint)
 	}
 	return nil
-}
-
-// setAddress uses an address the server gave us and marks it for saving.
-func (d *Daemon) setAddress(p netip.Prefix) {
-	d.cfg.Address = p
-	d.unsaved = true
 }
 
 // serverPeers turns the server's peer list into peer book entries,
@@ -352,16 +359,15 @@ func peerFromServer(p protocol.Peer) (peerbook.Peer, error) {
 	if err != nil {
 		return peerbook.Peer{}, fmt.Errorf("public key: %w", err)
 	}
-	ip, err := netip.ParseAddr(strings.TrimSpace(p.VPNIP))
-	if err != nil {
-		return peerbook.Peer{}, fmt.Errorf("VPN address %q: %w", p.VPNIP, err)
-	}
 
 	peer := peerbook.Peer{
-		Source:     peerbook.Synced,
-		Name:       p.Name,
-		PublicKey:  pub,
-		AllowedIPs: []netip.Prefix{netip.PrefixFrom(ip, ip.BitLen())},
+		Source:    peerbook.Synced,
+		Name:      p.Name,
+		PublicKey: pub,
+		Subnet:    strings.TrimSpace(p.Subnet),
+	}
+	if peer.Subnet == ip6gen.AllSubnets {
+		return peerbook.Peer{}, errors.New(`subnet "*" is not valid`)
 	}
 	if ep := strings.TrimSpace(p.Endpoint); ep != "" {
 		if peer.Endpoint, err = netip.ParseAddrPort(ep); err != nil {
@@ -371,9 +377,11 @@ func peerFromServer(p protocol.Peer) (peerbook.Peer, error) {
 	return peer, nil
 }
 
-// ensureTunnel opens the tunnel if there is none, and recreates it if the machine's address changed
-// (the server re-registered the machines, or it was manually edited).
-func (d *Daemon) ensureTunnel(addr netip.Prefix) error {
+// ensureTunnel opens the tunnel if there is none, and recreates it if this
+// machine's address changed (mesh or subnet edited). A new tunnel starts
+// empty, so it marks the peers for applying.
+func (d *Daemon) ensureTunnel() error {
+	addr := d.ifaceAddr()
 	if d.tun != nil && d.tunAddr != addr {
 		d.log.Printf("our address changed to %s; recreating %s", addr, wg.TunnelName)
 		d.closeTunnel()
@@ -387,15 +395,23 @@ func (d *Daemon) ensureTunnel(addr netip.Prefix) error {
 		return err
 	}
 	d.tun, d.tunAddr = t, addr
+	d.stale = true
 	d.log.Printf("brought %s up with address %s", wg.TunnelName, addr)
 	return nil
 }
 
-// applyPeers makes the tunnel match the peer book.
-func (d *Daemon) applyPeers(addr netip.Prefix) error {
+// ifaceAddr is this machine's address with the mesh's prefix length, so every
+// subnet of the mesh is routed into the tunnel.
+func (d *Daemon) ifaceAddr() netip.Prefix {
+	return netip.PrefixFrom(d.addr, ip6gen.NetworkBits)
+}
+
+// applyPeers makes the tunnel match the peer book. Peers in a subnet this
+// machine does not accept are left out.
+func (d *Daemon) applyPeers() error {
 	want := wg.Config{Interface: wg.Interface{
 		PrivateKey: d.cfg.PrivateKey,
-		Address:    addr,
+		Address:    d.ifaceAddr(),
 		ListenPort: d.cfg.ListenPort,
 		MTU:        d.cfg.MTU,
 	}}
@@ -405,10 +421,16 @@ func (d *Daemon) applyPeers(addr netip.Prefix) error {
 		if p.PublicKey == d.pub {
 			continue
 		}
+		if !d.rules.Accepts(p.Subnet) {
+			d.log.Printf("leaving out peer %q: subnet %q is not accepted", p.Name, p.Subnet)
+			continue
+		}
+
+		addr := ip6gen.Address(d.cfg.Mesh, p.Subnet, p.PublicKey)
 		want.Peers = append(want.Peers, wg.Peer{
 			Name:                p.Name,
 			PublicKey:           p.PublicKey,
-			AllowedIPs:          p.AllowedIPs,
+			AllowedIPs:          []netip.Prefix{netip.PrefixFrom(addr, 128)},
 			Endpoint:            p.Endpoint,
 			PersistentKeepalive: keepalive,
 		})
@@ -430,7 +452,7 @@ func (d *Daemon) applyPeers(addr netip.Prefix) error {
 // remembering changed. A failed write is retried on the next pass; the
 // tunnel does not depend on it.
 func (d *Daemon) saveIfNeeded() {
-	if !d.unsaved && !d.book.NeedsSave() {
+	if !d.book.NeedsSave() {
 		return
 	}
 	if err := d.saveFile(); err != nil {
@@ -458,7 +480,6 @@ func (d *Daemon) saveFile() error {
 		disk.PrivateKey = d.cfg.PrivateKey
 	}
 	if d.cfg.UsesServer() && disk.UsesServer() {
-		disk.Address = d.cfg.Address
 		disk.Peers = mergePeers(disk.Peers, d.book.ServerPeers())
 	}
 
@@ -471,7 +492,6 @@ func (d *Daemon) saveFile() error {
 	}
 
 	d.lastRead = out
-	d.unsaved = false
 	d.newKey = false
 	d.book.MarkSaved()
 	return nil
@@ -535,15 +555,6 @@ func (d *Daemon) nextBackoff() time.Duration {
 
 	jitter := time.Duration(rand.Int63n(int64(current/4) + 1))
 	return current + jitter
-}
-
-// addressWithPrefix returns a netip.Prefix that combines the given IP address with the given CIDR prefix length.
-// If the CIDR is invalid, it returns a single-host prefix (/32 for IPv4, /128 for IPv6).
-func addressWithPrefix(ip netip.Addr, cidr netip.Prefix) netip.Prefix {
-	if !cidr.IsValid() {
-		return netip.PrefixFrom(ip, ip.BitLen()) // single host: /32 for IPv4
-	}
-	return netip.PrefixFrom(ip, cidr.Bits())
 }
 
 // quietLog logs a problem that comes back on every pass only once, and

@@ -59,13 +59,6 @@ func (c *Client) Register(ctx context.Context, req protocol.RegisterRequest) (pr
 		return protocol.RegisterResponse{}, err
 	}
 
-	if resp.VPNIP == "" {
-		return protocol.RegisterResponse{}, errors.New("the server did not return a VPN address")
-	}
-	if resp.VPNCIDR == "" {
-		return protocol.RegisterResponse{}, errors.New("the server did not return a VPN range")
-	}
-
 	return resp, nil
 }
 

@@ -2,12 +2,14 @@ package daemon
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net/netip"
 	"os"
 	"strconv"
 	"strings"
 
+	"knoten/internal/ip6gen"
 	"knoten/internal/key"
 	"knoten/internal/peerbook"
 	"knoten/internal/protocol"
@@ -70,14 +72,18 @@ func Setup(configPath string, force bool) error {
 	if portAnswer != "" {
 		cfg.ListenPort, _ = strconv.Atoi(portAnswer)
 	}
+
+	fmt.Println()
+
+	cfg.Mesh = askUntilValid(reader, "Mesh name (the same on every machine of the mesh): ", false, func(string) error { return nil })
+	cfg.Subnet = askUntilValid(reader, "Subnet of this machine (leave empty for \"global\"): ", true, validateSubnet)
+	if cfg.Subnet == "" {
+		cfg.Subnet = ip6gen.DefaultSubnet
+	}
+
 	fmt.Println()
 
 	askServer(reader, &cfg)
-
-	if !cfg.UsesServer() {
-		cfg.Address, _ = netip.ParsePrefix(askUntilValid(reader, "This machine's VPN address (e.g. 10.0.0.1/24): ", false, validateCIDRAddress))
-		fmt.Println()
-	}
 
 	askPeers(reader, &cfg)
 
@@ -95,6 +101,7 @@ func Setup(configPath string, force bool) error {
 
 	fmt.Printf("Config written to %s\n", configPath)
 	fmt.Printf("This machine's public key: %s\n", cfg.PrivateKey.PublicKey())
+	fmt.Printf("This machine's address:    %s\n", ip6gen.Address(cfg.Mesh, cfg.Subnet, cfg.PrivateKey.PublicKey()))
 	fmt.Println("To change settings or peers later, edit that file; the README explains each field.")
 	fmt.Println("https://github.com/Yacin1102/Knoten")
 	fmt.Println()
@@ -102,11 +109,11 @@ func Setup(configPath string, force bool) error {
 }
 
 // askServer asks for an optional coordination server. With one, the server
-// gives this machine its address and keeps the synced peers up to date.
+// keeps the synced peers up to date.
 func askServer(reader *bufio.Reader, cfg *Config_file) {
-	fmt.Println("A coordination server hands out VPN addresses and keeps the peer list up to")
-	fmt.Println("date, so you never type another machine's key by hand. Leave it empty if you")
-	fmt.Println("want to list every peer yourself.")
+	fmt.Println("A coordination server keeps the peer list up to date, so you never type")
+	fmt.Println("another machine's key by hand. Leave it empty if you want to list every")
+	fmt.Println("peer yourself.")
 	fmt.Println()
 
 	cfg.ServerURL = askUntilValid(reader, fmt.Sprintf("Coordination server URL (e.g. %s, leave empty for none): ", ExampleServerURL), true, validateServerURL)
@@ -142,17 +149,20 @@ func askPeers(reader *bufio.Reader, cfg *Config_file) {
 			continue
 		}
 
-		ips := askUntilValid(reader, "  AllowedIPs (e.g. 10.0.0.2/32, 192.168.1.0/24): ", false, validateAllowedIPs)
+		subnet := askUntilValid(reader, "  Subnet of this peer (leave empty for \"global\"): ", true, validateSubnet)
+		if subnet == "" {
+			subnet = ip6gen.DefaultSubnet
+		}
 
 		end := askUntilValid(reader, "  Endpoint (e.g. 192.168.56.102:51820) (leave empty if this peer has no fixed address): ", true, validateEndpoint)
 
 		name := ask(reader, "  Name for this peer (optional): ")
 
 		peer := peerbook.Peer{
-			Source:     peerbook.Static,
-			Name:       name,
-			PublicKey:  peerKey,
-			AllowedIPs: parsePrefixList(ips),
+			Source:    peerbook.Static,
+			Name:      name,
+			PublicKey: peerKey,
+			Subnet:    subnet,
 		}
 		if end != "" {
 			peer.Endpoint, _ = netip.ParseAddrPort(end)
@@ -160,17 +170,6 @@ func askPeers(reader *bufio.Reader, cfg *Config_file) {
 		cfg.Peers = append(cfg.Peers, peer)
 	}
 	fmt.Println()
-}
-
-// parsePrefixList reads a list like "10.0.0.2/32, 10.0.1.0/24" that
-// validateAllowedIPs has already checked.
-func parsePrefixList(s string) []netip.Prefix {
-	var out []netip.Prefix
-	for _, part := range strings.Split(s, ",") {
-		p, _ := netip.ParsePrefix(strings.TrimSpace(part))
-		out = append(out, p)
-	}
-	return out
 }
 
 func validateListenPort(s string) error {
@@ -188,33 +187,16 @@ func validateServerURL(s string) error {
 	return nil
 }
 
+func validateSubnet(s string) error {
+	if s == ip6gen.AllSubnets {
+		return errors.New(`"*" is not a subnet name; it only means all subnets in accept_subnets`)
+	}
+	return nil
+}
+
 func validateEndpoint(s string) error {
 	if _, err := netip.ParseAddrPort(s); err != nil {
 		return fmt.Errorf("%q is not ip:port: %w", s, err)
-	}
-	return nil
-}
-
-func validateCIDRAddress(s string) error {
-	prefix, err := netip.ParsePrefix(strings.TrimSpace(s))
-	if err != nil {
-		return fmt.Errorf("%q is not a valid address/prefix: %w", s, err)
-	}
-	if !prefix.Addr().Is4() {
-		return fmt.Errorf("%q is not a valid IPv4 address", s)
-	}
-	return nil
-}
-
-func validateAllowedIPs(s string) error {
-	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			return fmt.Errorf("empty entry in the list")
-		}
-		if err := validateCIDRAddress(part); err != nil {
-			return err
-		}
 	}
 	return nil
 }

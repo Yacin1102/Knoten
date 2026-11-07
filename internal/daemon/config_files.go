@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"knoten/internal/ip6gen"
 	"knoten/internal/key"
 	"knoten/internal/peerbook"
 	"knoten/internal/protocol"
@@ -35,8 +35,13 @@ type Config_file struct {
 	// Written by meshd once, when it makes a new key.
 	PrivateKey key.Key `json:"private_key,omitzero"`
 
-	// Manually set without a server. With a server, meshd writes the one it assigned.
-	Address netip.Prefix `json:"address,omitzero"`
+	// The mesh this machine is in; its address is computed from it, the subnet and the key.
+	Mesh string `json:"mesh"`
+
+	// This machine's subnet, and the subnets whose peers it accepts ("*" for all).
+	// When accept_subnets is empty, only this machine's own subnet is accepted.
+	Subnet        string   `json:"subnet,omitempty"`
+	AcceptSubnets []string `json:"accept_subnets,omitempty"`
 
 	// "static" and "blocked" peers are manually set, "synced" peers are meshd's.
 	Peers []peerbook.Peer `json:"peers,omitempty"`
@@ -111,6 +116,12 @@ func SaveConfig(path string, cfg Config_file) error {
 func (c *Config_file) Validate() error {
 	c.ServerURL = strings.TrimSpace(c.ServerURL)
 	c.JoinToken = strings.TrimSpace(c.JoinToken)
+	c.Mesh = strings.TrimSpace(c.Mesh)
+
+	c.Subnet = strings.TrimSpace(c.Subnet)
+	for i := range c.AcceptSubnets {
+		c.AcceptSubnets[i] = strings.TrimSpace(c.AcceptSubnets[i])
+	}
 
 	if c.ListenPort == 0 {
 		c.ListenPort = wg.DefaultListenPort
@@ -125,9 +136,15 @@ func (c *Config_file) Validate() error {
 	if c.PersistentKeepalive < 0 || c.PersistentKeepalive > 65535 {
 		return fmt.Errorf("persistent_keepalive %d is out of range 0-65535", c.PersistentKeepalive)
 	}
+	if c.MTU != 0 && (c.MTU < 1280 || c.MTU > 65535) {
+		return fmt.Errorf("mtu %d is out of range 1280-65535 (IPv6 needs at least 1280)", c.MTU)
+	}
 
-	if !c.UsesServer() && !c.Address.IsValid() {
-		return errors.New("without a server_url, a valid address must be set (e.g. \"10.0.0.1/24\")")
+	if c.Mesh == "" {
+		return errors.New("mesh must be set")
+	}
+	if c.Subnet == ip6gen.AllSubnets {
+		return errors.New(`subnet cannot be "*"; "*" only means all subnets in accept_subnets`)
 	}
 
 	seen := map[key.Key]int{} // public key → index of the peer that has it
@@ -154,17 +171,9 @@ func (c *Config_file) Validate() error {
 		}
 		seen[p.PublicKey] = i
 
-		if p.Source == peerbook.Blocked {
-			continue
-		}
-		if len(p.AllowedIPs) == 0 {
-			return fmt.Errorf("peers[%d] (%s) has no allowed_ips", i, p.Name)
-		}
-		for j, ip := range p.AllowedIPs {
-			if !ip.IsValid() {
-				return fmt.Errorf("peers[%d] (%s): allowed_ips[%d] is not valid", i, p.Name, j)
-			}
-			p.AllowedIPs[j] = ip.Masked()
+		p.Subnet = strings.TrimSpace(p.Subnet)
+		if p.Subnet == ip6gen.AllSubnets {
+			return fmt.Errorf(`peers[%d] (%s): subnet cannot be "*"`, i, p.Name)
 		}
 	}
 

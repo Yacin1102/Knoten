@@ -28,11 +28,11 @@ const (
 
 // Peer is one peer, exactly as it is written in meshd.json.
 type Peer struct {
-	Source     Source         `json:"source"`
-	Name       string         `json:"name,omitempty"`
-	PublicKey  key.Key        `json:"public_key"`
-	AllowedIPs []netip.Prefix `json:"allowed_ips,omitempty"`
-	Endpoint   netip.AddrPort `json:"endpoint,omitzero"`
+	Source    Source         `json:"source"`
+	Name      string         `json:"name,omitempty"`
+	PublicKey key.Key        `json:"public_key"`
+	Subnet    string         `json:"subnet,omitempty"`
+	Endpoint  netip.AddrPort `json:"endpoint,omitzero"`
 }
 
 // Book holds the peers from every source.
@@ -50,7 +50,7 @@ func (p Peer) same(q Peer) bool {
 	return p.Source == q.Source &&
 		p.Name == q.Name &&
 		p.Endpoint == q.Endpoint &&
-		slices.Equal(p.AllowedIPs, q.AllowedIPs)
+		p.Subnet == q.Subnet
 }
 
 // Only returns the peers in list that have source s.
@@ -89,7 +89,7 @@ func (b *Book) LoadFromConfig(list []Peer, useServer bool) {
 
 // SetFromServer replaces the server peers with the server's current list.
 // Peers manually pinned (static) or blocked keep manual entry.
-func (b *Book) SetFromServer(list []Peer) {
+func (b *Book) SetFromServer(list []Peer) bool {
 	next := make(map[key.Key]Peer, len(list))
 	for _, p := range list {
 		if isIn(p.PublicKey, b.static, b.blocked) {
@@ -99,10 +99,12 @@ func (b *Book) SetFromServer(list []Peer) {
 		next[p.PublicKey] = p
 	}
 
-	if !sameMaps(b.synced, next) {
+	changed := !sameMaps(b.synced, next)
+	if changed {
 		b.dirty = true
 	}
 	b.synced = next
+	return changed
 }
 
 // UpdateManualPeers is for edits to meshd.json while meshd runs. It takes the
