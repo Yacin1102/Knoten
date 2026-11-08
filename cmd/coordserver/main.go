@@ -9,19 +9,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"knoten/internal/server"
-	"knoten/internal/store"
 )
 
 func main() {
 	listenAddr := flag.String("listen", ":8080", "address to listen on")
-
-	dbPath := flag.String("db", "/var/lib/knoten/coord.db", "path to the SQLite database file; it is created if missing")
 
 	tokenFlag := flag.String("token", "", "shared join token (INSECURE: visible in `ps`; prefer -token-file)")
 
@@ -37,11 +33,6 @@ func main() {
 
 	logger := log.New(os.Stderr, "coordserver: ", log.LstdFlags)
 
-	cidr, err := store.ParseCIDR(store.VPNRange)
-	if err != nil {
-		fatalf(logger, "the built-in VPN range %q is not usable: %v", store.VPNRange, err)
-	}
-
 	if *peerTimeout <= *syncInterval {
 		fatalf(logger,
 			"-peer-timeout (%s) must be longer than -sync-interval (%s); otherwise a single missed poll drops a healthy machine out of every peer list",
@@ -53,23 +44,8 @@ func main() {
 		fatalf(logger, "could not read the join token: %v", err)
 	}
 
-	dbDir := filepath.Dir(*dbPath)
-	if err := os.MkdirAll(dbDir, 0o700); err != nil {
-		fatalf(logger, "could not create the database directory %s: %v", dbDir, err)
-	}
-
-	st, err := store.Open(*dbPath, cidr)
-	if err != nil {
-		fatalf(logger, "could not open the database: %v", err)
-	}
-	defer func() {
-		if err := st.Close(); err != nil {
-			logger.Printf("error while closing the database: %v", err)
-		}
-	}()
 
 	srv, err := server.New(server.Config{
-		Store:        st,
 		JoinToken:    joinToken,
 		SyncInterval: *syncInterval,
 		PeerTimeout:  *peerTimeout,
@@ -102,8 +78,6 @@ func main() {
 		serverErr <- httpServer.ListenAndServe()
 	}()
 
-	logger.Printf("VPN range: %s", cidr.String())
-	logger.Printf("database:  %s", *dbPath)
 	logger.Printf("machines poll every %s; considered gone after %s of silence", *syncInterval, *peerTimeout)
 	if joinToken == "" {
 		logger.Printf("WARNING: no join token set; ANY machine that can reach this port may join and read the peer list")

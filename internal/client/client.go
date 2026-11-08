@@ -50,18 +50,6 @@ func New(baseURL, token string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Register(ctx context.Context, req protocol.RegisterRequest) (protocol.RegisterResponse, error) {
-
-	req.JoinToken = c.token
-
-	var resp protocol.RegisterResponse
-	if err := c.post(ctx, protocol.PathRegister, req, &resp); err != nil {
-		return protocol.RegisterResponse{}, err
-	}
-
-	return resp, nil
-}
-
 func (c *Client) Sync(ctx context.Context, req protocol.SyncRequest) (protocol.SyncResponse, error) {
 
 	req.JoinToken = c.token
@@ -69,10 +57,6 @@ func (c *Client) Sync(ctx context.Context, req protocol.SyncRequest) (protocol.S
 	var resp protocol.SyncResponse
 	if err := c.post(ctx, protocol.PathSync, req, &resp); err != nil {
 		return protocol.SyncResponse{}, err
-	}
-
-	if resp.SyncIntervalSeconds <= 0 {
-		resp.SyncIntervalSeconds = protocol.DefaultSyncIntervalSeconds
 	}
 
 	return resp, nil
@@ -126,9 +110,6 @@ func (c *Client) translateError(status int, body []byte) error {
 	}
 
 	switch status {
-	case http.StatusNotFound:
-		return fmt.Errorf("%w: %s", protocol.ErrUnknownMachine, message)
-
 	case http.StatusUnauthorized:
 		return fmt.Errorf("the coordination server rejected our join token: %s", message)
 

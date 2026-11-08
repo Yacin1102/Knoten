@@ -13,7 +13,6 @@ import (
 	"knoten/internal/ip6gen"
 	"knoten/internal/key"
 	"knoten/internal/peerbook"
-	"knoten/internal/protocol"
 	"knoten/internal/wg"
 )
 
@@ -127,10 +126,10 @@ func (c *Config_file) Validate() error {
 		c.ListenPort = wg.DefaultListenPort
 	}
 
-	if err := protocol.ValidateListenPort(c.ListenPort); err != nil {
+	if err := ValidateListenPort(c.ListenPort); err != nil {
 		return fmt.Errorf("listen_port: %w", err)
 	}
-	if err := protocol.ValidateName(c.MachineName()); err != nil {
+	if err := ValidateName(c.MachineName()); err != nil {
 		return fmt.Errorf("name: %w", err)
 	}
 	if c.PersistentKeepalive < 0 || c.PersistentKeepalive > 65535 {

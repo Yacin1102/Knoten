@@ -1,7 +1,10 @@
+// Package server is the coordination server. It keeps, in memory only, the
+// machines that synced recently and tells each one about the others. Machines
+// work out their own addresses and decide which peers to use; the server only
+// passes on what each machine says about itself.
 package server
 
 import (
-	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -9,15 +12,15 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"knoten/internal/protocol"
-	"knoten/internal/store"
 )
 
 type Config struct {
-	Store        *store.Store
 	JoinToken    string
 	SyncInterval time.Duration
 	PeerTimeout  time.Duration
@@ -25,15 +28,22 @@ type Config struct {
 	Logger       *log.Logger
 }
 
+// machine is what the server knows about one machine, as the machine reported it.
+type machine struct {
+	name     string
+	subnet   string
+	network  string
+	endpoint string // the address the server saw it at, with its listen port
+	lastSeen time.Time
+}
+
 type Server struct {
-	cfg       Config
-	startedAt time.Time
+	cfg      Config
+	mu       sync.Mutex
+	machines map[string]machine // by public key
 }
 
 func New(cfg Config) (*Server, error) {
-	if cfg.Store == nil {
-		return nil, errors.New("server needs a database")
-	}
 	if cfg.Logger == nil {
 		return nil, errors.New("server needs a logger")
 	}
@@ -45,21 +55,65 @@ func New(cfg Config) (*Server, error) {
 			"peer timeout (%s) must be longer than the sync interval (%s), otherwise one missed poll drops a healthy machine out of every peer list",
 			cfg.PeerTimeout, cfg.SyncInterval)
 	}
-	return &Server{cfg: cfg, startedAt: time.Now()}, nil
+	return &Server{cfg: cfg, machines: map[string]machine{}}, nil
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-
-	mux.HandleFunc("POST "+protocol.PathRegister, s.handleRegister)
 	mux.HandleFunc("POST "+protocol.PathSync, s.handleSync)
-	mux.HandleFunc("GET "+protocol.PathHealth, s.handleHealth)
+	return limitBody(mux)
+}
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("no endpoint at %s %s", r.Method, r.URL.Path))
+// handleSync records the caller and answers with every other machine that
+// synced within the peer timeout. Machines silent for longer are forgotten.
+func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
+	var req protocol.SyncRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !s.checkToken(req.JoinToken) {
+		writeError(w, http.StatusUnauthorized, "invalid join token")
+		return
+	}
+
+	now := time.Now()
+	caller := machine{
+		name:     req.Name,
+		subnet:   req.Subnet,
+		network:  req.Network,
+		endpoint: net.JoinHostPort(observedIP(r, s.cfg.TrustProxy), strconv.Itoa(req.ListenPort)),
+		lastSeen: now,
+	}
+
+	s.mu.Lock()
+	_, known := s.machines[req.PublicKey]
+	s.machines[req.PublicKey] = caller
+
+	peers := make([]protocol.Peer, 0, len(s.machines))
+	for pub, m := range s.machines {
+		switch {
+		case now.Sub(m.lastSeen) > s.cfg.PeerTimeout:
+			delete(s.machines, pub)
+		case pub != req.PublicKey:
+			peers = append(peers, protocol.Peer{
+				PublicKey: pub,
+				Name:      m.name,
+				Subnet:    m.subnet,
+				Network:   m.network,
+				Endpoint:  m.endpoint,
+			})
+		}
+	}
+	s.mu.Unlock()
+
+	if !known {
+		s.cfg.Logger.Printf("%q (%s) joined from %s", caller.name, shortKey(req.PublicKey), caller.endpoint)
+	}
+
+	writeJSON(w, http.StatusOK, protocol.SyncResponse{
+		Peers:               peers,
+		SyncIntervalSeconds: int(s.cfg.SyncInterval.Seconds()),
 	})
-
-	return recoverPanic(s.cfg.Logger, logRequests(s.cfg.Logger, limitBody(mux)))
 }
 
 const maxBodyBytes = 64 * 1024
@@ -67,58 +121,6 @@ const maxBodyBytes = 64 * 1024
 func limitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-		next.ServeHTTP(w, r)
-	})
-}
-
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
-	bytes  int
-}
-
-func (r *statusRecorder) WriteHeader(code int) {
-	r.status = code
-	r.ResponseWriter.WriteHeader(code)
-}
-
-func (r *statusRecorder) Write(b []byte) (int, error) {
-	if r.status == 0 {
-		r.status = http.StatusOK
-	}
-	n, err := r.ResponseWriter.Write(b)
-	r.bytes += n
-	return n, err
-}
-
-func logRequests(logger *log.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-
-		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-
-		next.ServeHTTP(rec, r)
-
-		logger.Printf("%s %s -> %d (%d bytes) in %s from %s",
-			r.Method, r.URL.Path, rec.status, rec.bytes,
-			time.Since(start).Round(time.Microsecond),
-			r.RemoteAddr)
-	})
-}
-
-func recoverPanic(logger *log.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				if rec == http.ErrAbortHandler {
-					panic(rec)
-				}
-
-				logger.Printf("PANIC while handling %s %s: %v", r.Method, r.URL.Path, rec)
-
-				writeError(w, http.StatusInternalServerError, "internal server error")
-			}
-		}()
 		next.ServeHTTP(w, r)
 	})
 }
@@ -136,8 +138,6 @@ func observedIP(r *http.Request, trustProxy bool) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
-		// Returning the whole RemoteAddr unmodified may break the configs and give wrong address.
-		// Because later the port will be added to the address. So, we have to investigate this in the future.
 	}
 	return host
 }
@@ -151,12 +151,10 @@ func (s *Server) checkToken(presented string) bool {
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	dec := json.NewDecoder(r.Body)
-
 	dec.DisallowUnknownFields()
 
 	if err := dec.Decode(dst); err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			writeError(w, http.StatusRequestEntityTooLarge,
 				fmt.Sprintf("request body is larger than %d bytes", maxBodyBytes))
 			return false
@@ -164,28 +162,22 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 		writeError(w, http.StatusBadRequest, "could not read the JSON body: "+err.Error())
 		return false
 	}
-
 	if dec.More() {
 		writeError(w, http.StatusBadRequest, "request body contains more than one JSON object")
 		return false
 	}
-
 	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, src any) {
 	body, err := json.Marshal(src)
 	if err != nil {
-		http.Error(w, `{"error":"could not encode the response"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "could not encode the response")
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
-
 	w.Header().Set("Cache-Control", "no-store")
-
 	w.WriteHeader(status)
-
 	_, _ = w.Write(body)
 }
 
@@ -193,21 +185,10 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, protocol.ErrorResponse{Error: message})
 }
 
-func (s *Server) writeStoreError(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		writeError(w, http.StatusNotFound, protocol.ErrUnknownMachine.Error())
-
-	case errors.Is(err, store.ErrPoolExhausted):
-		writeError(w, http.StatusInsufficientStorage,
-			"the coordination server has no free VPN addresses left in "+store.VPNRange)
-
-	default:
-		s.cfg.Logger.Printf("database error on %s %s: %v", r.Method, r.URL.Path, err)
-		writeError(w, http.StatusInternalServerError, "internal server error")
+func shortKey(k string) string {
+	const n = 8
+	if len(k) <= n {
+		return k
 	}
-}
-
-func requestContext(r *http.Request) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(r.Context(), 5*time.Second)
+	return k[:n] + "…"
 }

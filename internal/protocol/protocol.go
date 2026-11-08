@@ -1,36 +1,14 @@
 package protocol
 
-import (
-	"errors"
-	"fmt"
-	"strings"
-
-	"knoten/internal/key"
-)
-
 const (
-	PathRegister = "/v1/register"
-	PathSync     = "/v1/sync"
-	PathHealth   = "/v1/health"
+	PathSync     = "/v2/sync"
 )
 
 const DefaultSyncIntervalSeconds = 30
 
-type RegisterRequest struct {
-	PublicKey  string `json:"public_key"`
-	Name       string `json:"name"`
-	ListenPort int    `json:"listen_port"`
-	Subnet     string `json:"subnet"`
-
-	JoinToken string `json:"join_token,omitempty"`
-}
-
-type RegisterResponse struct {
-	Endpoint string `json:"endpoint"`
-}
-
 type SyncRequest struct {
 	PublicKey  string `json:"public_key"`
+	Name       string `json:"name"`
 	ListenPort int    `json:"listen_port"`
 	Subnet     string `json:"subnet"`
 	Network    string `json:"network"` // the first 48 bits of the sender's address
@@ -38,13 +16,13 @@ type SyncRequest struct {
 	JoinToken string `json:"join_token,omitempty"`
 }
 
+
 type Peer struct {
 	PublicKey string `json:"public_key"`
 	Name      string `json:"name"`
 	Subnet    string `json:"subnet"`
 	Network   string `json:"network"`
 	Endpoint  string `json:"endpoint"`
-	LastSeen  int64  `json:"last_seen"`
 }
 
 type SyncResponse struct {
@@ -54,43 +32,4 @@ type SyncResponse struct {
 
 type ErrorResponse struct {
 	Error string `json:"error"`
-}
-
-var ErrUnknownMachine = errors.New("machine is not registered on this server")
-
-var ErrEmptyKey = errors.New("public key is empty")
-
-func ValidatePublicKey(s string) error {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ErrEmptyKey
-	}
-
-	if _, err := key.ParseKey(s); err != nil {
-		return fmt.Errorf("public key is invalid: %w", err)
-	}
-
-	return nil
-}
-
-func ValidateListenPort(p int) error {
-	if p < 1 || p > 65535 {
-		return fmt.Errorf("listen port %d is out of range 1-65535", p)
-	}
-
-	return nil
-}
-
-func ValidateName(s string) error {
-	if len(s) > 64 {
-		return fmt.Errorf("name is %d characters, maximum is 64", len(s))
-	}
-
-	for _, r := range s {
-		if r < 32 || r == 127 {
-			return errors.New("name contains a control character")
-		}
-	}
-
-	return nil
 }

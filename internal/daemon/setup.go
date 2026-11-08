@@ -12,7 +12,6 @@ import (
 	"knoten/internal/ip6gen"
 	"knoten/internal/key"
 	"knoten/internal/peerbook"
-	"knoten/internal/protocol"
 	"knoten/internal/wg"
 )
 
@@ -87,7 +86,7 @@ func Setup(configPath string, force bool) error {
 
 	askPeers(reader, &cfg)
 
-	cfg.Name = askUntilValid(reader, fmt.Sprintf("Name for this machine (leave empty for %q): ", cfg.MachineName()), true, protocol.ValidateName)
+	cfg.Name = askUntilValid(reader, fmt.Sprintf("Name for this machine (leave empty for %q): ", cfg.MachineName()), true, ValidateName)
 	fmt.Println()
 
 	cfg.PrivateKey = key.GenerateKeyPair().PrivateKey
@@ -177,7 +176,7 @@ func validateListenPort(s string) error {
 	if err != nil {
 		return fmt.Errorf("%q is not a number", s)
 	}
-	return protocol.ValidateListenPort(n)
+	return ValidateListenPort(n)
 }
 
 func validateServerURL(s string) error {

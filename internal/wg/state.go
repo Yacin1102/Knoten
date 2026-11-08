@@ -13,9 +13,7 @@ import (
 
 type Interface struct {
 	PrivateKey key.Key
-	Address    netip.Prefix
 	ListenPort int
-	MTU        int
 }
 
 // Peer is one remote machine the tunnel talks to.

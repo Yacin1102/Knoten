@@ -292,13 +292,6 @@ func (d *Daemon) syncIfDue(ctx context.Context) bool {
 func (d *Daemon) syncServer(ctx context.Context) (time.Duration, error) {
 
 	resp, err := d.http.Sync(ctx, d.syncRequest())
-	if errors.Is(err, protocol.ErrUnknownMachine) {
-		d.log.Printf("the coordination server does not know this machine, registering")
-		if err := d.register(ctx); err != nil {
-			return 0, err
-		}
-		resp, err = d.http.Sync(ctx, d.syncRequest())
-	}
 	if err != nil {
 		return 0, err
 	}
@@ -315,6 +308,7 @@ func (d *Daemon) syncRequest() protocol.SyncRequest {
 		ListenPort: d.cfg.ListenPort,
 		Subnet:     d.cfg.Subnet,
 		Network:    d.network(),
+		Name:       d.cfg.MachineName(),
 	}
 }
 
@@ -322,27 +316,6 @@ func (d *Daemon) syncRequest() protocol.SyncRequest {
 // from the server are only used if theirs is the same.
 func (d *Daemon) network() string {
 	return netip.PrefixFrom(d.addr, ip6gen.NetworkBits).Masked().String()
-}
-
-func (d *Daemon) register(ctx context.Context) error {
-	d.log.Printf("registering with %s", d.cfg.ServerURL)
-
-	resp, err := d.http.Register(ctx, protocol.RegisterRequest{
-		PublicKey:  d.pub.String(),
-		Name:       d.cfg.MachineName(),
-		ListenPort: d.cfg.ListenPort,
-		Subnet:     d.cfg.Subnet,
-	})
-	if err != nil {
-		return err
-	}
-
-	d.log.Printf("registered")
-
-	if resp.Endpoint != "" {
-		d.log.Printf("the server sees us at %s", resp.Endpoint)
-	}
-	return nil
 }
 
 // serverPeers turns the server's peer list into peer book entries, skipping
@@ -422,9 +395,7 @@ func (d *Daemon) ifaceAddr() netip.Prefix {
 func (d *Daemon) applyPeers() error {
 	want := wg.Config{Interface: wg.Interface{
 		PrivateKey: d.cfg.PrivateKey,
-		Address:    d.ifaceAddr(),
 		ListenPort: d.cfg.ListenPort,
-		MTU:        d.cfg.MTU,
 	}}
 
 	keepalive := time.Duration(d.cfg.PersistentKeepalive) * time.Second
@@ -584,4 +555,26 @@ func (q *quietLog) Printf(l *log.Logger, format string, args ...any) {
 // Clear forgets the last problem, so the next one is logged again.
 func (q *quietLog) Clear() {
 	q.last = ""
+}
+
+func ValidateListenPort(p int) error {
+	if p < 1 || p > 65535 {
+		return fmt.Errorf("listen port %d is out of range 1-65535", p)
+	}
+
+	return nil
+}
+
+func ValidateName(s string) error {
+	if len(s) > 64 {
+		return fmt.Errorf("name is %d characters, maximum is 64", len(s))
+	}
+
+	for _, r := range s {
+		if r < 32 || r == 127 {
+			return errors.New("name contains a control character")
+		}
+	}
+
+	return nil
 }
