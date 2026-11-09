@@ -17,7 +17,6 @@ Knoten connects your machines (servers, cloud instances, VMs, laptops) over **di
 
 A coordination server may exist, but it is deliberately dumb: it handles **discovery only**, keeps no database or files, and never carries your data. Every decision (addresses, which peers to accept) is made by each machine itself.
 
-*This Demo is from an older version:*
 <p align="center">
   <img src="./assets/Knoten_demo.gif" alt="Knoten_demo.gif">
 </p>
