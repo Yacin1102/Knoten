@@ -1,3 +1,19 @@
+// Coordserver is the Knoten coordination server. It helps machines find each
+// other and nothing more: it keeps no database or files, and it never carries
+// tunnel traffic.
+//
+// Each machine running meshd sends its details to the server and gets the
+// other machines back. A machine that stays silent for longer than
+// -peer-timeout is left out of the lists.
+//
+// Usage:
+//
+//	coordserver [-listen :8080] [-token-file path] [-sync-interval 30s]
+//	            [-peer-timeout 90s] [-trust-proxy]
+//
+// The server speaks plain HTTP. Without a join token, any machine that can
+// reach it may join and read the peer list. Prefer -token-file over -token,
+// since -token is visible in ps.
 package main
 
 import (
@@ -13,7 +29,7 @@ import (
 	"syscall"
 	"time"
 
-	"knoten/internal/server"
+	"github.com/Yacin1102/Knoten/internal/server"
 )
 
 func main() {

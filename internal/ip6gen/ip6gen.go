@@ -10,7 +10,7 @@ import (
 	"crypto/sha256"
 	"net/netip"
 
-	"knoten/internal/key"
+	"github.com/Yacin1102/Knoten/internal/key"
 )
 
 // NetworkBits is the length of the part every machine in a mesh shares.

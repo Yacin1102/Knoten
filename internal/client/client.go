@@ -1,3 +1,6 @@
+// Package client is meshd's HTTP client for the coordination server. Sync
+// sends this machine's details and returns the other machines the server
+// knows about.
 package client
 
 import (
@@ -12,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"knoten/internal/protocol"
+	"github.com/Yacin1102/Knoten/internal/protocol"
 )
 
 const maxResponseBytes = 8 << 20

@@ -1,6 +1,5 @@
 // Package key is WireGuard's key format: 32 bytes, written as base64 for
 // people, files and the server, and as hex for the device protocol.
-
 package key
 
 import (

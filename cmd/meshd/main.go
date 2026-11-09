@@ -1,3 +1,20 @@
+// Meshd is the Knoten node daemon. It runs a WireGuard tunnel, knoten-wg,
+// inside its own process and keeps the tunnel's peers in line with meshd.json
+// and, if one is configured, the coordination server. The tunnel exists only
+// while meshd runs.
+//
+// Usage:
+//
+//	meshd [-config path]     run the daemon
+//	meshd -setup [-force]    answer a few questions and write the config
+//	meshd -show-key          print this machine's public key
+//
+// The config file is /etc/knoten/meshd.json unless -config says otherwise.
+// meshd rereads it every few seconds, so edits take effect without a restart.
+// Send SIGHUP to make meshd reread it and sync with the server right away.
+//
+// -setup -force overwrites an existing config, which gives the machine a new
+// key.
 package main
 
 import (
@@ -9,7 +26,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"knoten/internal/daemon"
+	"github.com/Yacin1102/Knoten/internal/daemon"
 )
 
 func main() {

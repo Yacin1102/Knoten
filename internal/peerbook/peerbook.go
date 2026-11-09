@@ -20,7 +20,7 @@ import (
 	"net/netip"
 	"slices"
 
-	"knoten/internal/key"
+	"github.com/Yacin1102/Knoten/internal/key"
 )
 
 // Source says where a peer comes from, and so who decides about it.

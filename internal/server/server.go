@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"knoten/internal/protocol"
+	"github.com/Yacin1102/Knoten/internal/protocol"
 )
 
 type Config struct {

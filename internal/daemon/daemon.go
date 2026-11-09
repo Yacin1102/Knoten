@@ -1,3 +1,11 @@
+// Package daemon is the core of meshd. It reads and writes meshd.json, runs
+// the interactive setup (meshd -setup), and keeps the WireGuard tunnel in
+// line with the peer book.
+//
+// Run works in passes. Each pass picks up edits to meshd.json, updates the
+// tunnel, syncs with the coordination server when a sync is due, and writes
+// meshd's own parts back to meshd.json. A pass runs every few seconds, when a
+// sync is due, on SIGHUP, and when the tunnel stops.
 package daemon
 
 import (
@@ -13,12 +21,12 @@ import (
 	"strings"
 	"time"
 
-	"knoten/internal/client"
-	"knoten/internal/ip6gen"
-	"knoten/internal/key"
-	"knoten/internal/peerbook"
-	"knoten/internal/protocol"
-	"knoten/internal/wg"
+	"github.com/Yacin1102/Knoten/internal/client"
+	"github.com/Yacin1102/Knoten/internal/ip6gen"
+	"github.com/Yacin1102/Knoten/internal/key"
+	"github.com/Yacin1102/Knoten/internal/peerbook"
+	"github.com/Yacin1102/Knoten/internal/protocol"
+	"github.com/Yacin1102/Knoten/internal/wg"
 )
 
 const (

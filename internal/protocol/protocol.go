@@ -1,3 +1,6 @@
+// Package protocol defines the JSON messages that meshd and the coordination
+// server exchange. A machine POSTs a SyncRequest to PathSync and gets a
+// SyncResponse back. Errors come back as an ErrorResponse.
 package protocol
 
 const (

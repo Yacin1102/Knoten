@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"knoten/internal/key"
+	"github.com/Yacin1102/Knoten/internal/key"
 )
 
 const DefaultListenPort = 51820

@@ -1,4 +1,4 @@
-module knoten
+module github.com/Yacin1102/Knoten
 
 go 1.26.5
 

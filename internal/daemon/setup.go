@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"knoten/internal/ip6gen"
-	"knoten/internal/key"
-	"knoten/internal/peerbook"
-	"knoten/internal/wg"
+	"github.com/Yacin1102/Knoten/internal/ip6gen"
+	"github.com/Yacin1102/Knoten/internal/key"
+	"github.com/Yacin1102/Knoten/internal/peerbook"
+	"github.com/Yacin1102/Knoten/internal/wg"
 )
 
 const ExampleServerURL = "http://coord.example.com:8080"
