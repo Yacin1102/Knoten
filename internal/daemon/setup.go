@@ -15,7 +15,7 @@ import (
 	"knoten/internal/wg"
 )
 
-const ExampleServerURL = "http://coord.example.com:8443"
+const ExampleServerURL = "http://coord.example.com:8080"
 
 func ask(reader *bufio.Reader, question string) string {
 	fmt.Print(question)
