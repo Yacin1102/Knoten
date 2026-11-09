@@ -43,6 +43,7 @@ type Config_file struct {
 	AcceptSubnets []string `json:"accept_subnets,omitempty"`
 
 	// "static" and "blocked" peers are manually set, "synced" peers are meshd's.
+	// The "only" mark is manual on any of them.
 	Peers []peerbook.Peer `json:"peers,omitempty"`
 }
 
@@ -159,6 +160,9 @@ func (c *Config_file) Validate() error {
 		default:
 			return fmt.Errorf("peers[%d] (%s): source must be %q, %q or %q, not %q",
 				i, p.Name, peerbook.Static, peerbook.Synced, peerbook.Blocked, p.Source)
+		}
+		if p.Only && p.Source == peerbook.Blocked {
+			return fmt.Errorf("peers[%d] (%s): a blocked peer cannot be only", i, p.Name)
 		}
 
 		if p.PublicKey.IsZero() {

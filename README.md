@@ -259,16 +259,17 @@ Each peer has a `source`, which says who decides about it:
 | `source`  | Written by | Meaning                                                                                          |
 | --------- | ---------- | ------------------------------------------------------------------------------------------------ |
 | `static`  | **you**    | Always in the tunnel. `meshd` never changes it.                                                  |
-| `synced`  | `meshd`    | Received from the coordination server and kept up to date. Edits to these lines are overwritten. |
+| `synced`  | `meshd`    | Received from the coordination server and kept up to date. Edits to these lines are overwritten. Without `server_url`, they are used as written and nothing updates them. |
 | `blocked` | **you**    | Never in the tunnel, even if the server sends it. Only `public_key` is needed.                   |
 
 - **List each `public_key` once.** To keep a server peer even after the server drops it, change its `source` to `static`. To keep it out, change it to `blocked`.
+- **`"only": true` limits the tunnel to the peers you mark.** Put it on any `static` or `synced` peer. While at least one peer is marked, only the marked peers are in the tunnel. The others, and new peers from the server, stay in the file but out of the tunnel. The mark only filters the tunnel; it never keeps a peer in the file. The server can't set or clear it, and a marked `synced` peer keeps its mark as long as the server sends it. If the server drops a marked `synced` peer, its line goes, mark and all, and once no marked peer is left, every peer is back in the tunnel. For a limit that can't lift on its own, mark a `static` peer. Remove the mark from every peer to go back to the full list. A `blocked` peer can't be marked.
 - **`subnet` is the peer's subnet exactly as it is in that peer's own `meshd.json`**, because the peer's address is computed from it. A peer whose subnet is not accepted by `accept_subnets` is left out of the tunnel.
 - `public_key` is the only required field. `endpoint` (`ip:port`) is optional: without it, this machine waits for the peer to connect first.
 
 #### How changes apply
 
-- `meshd` writes only its own parts: the `synced` peers, and `private_key` if it has to create one. Your settings and your `static` and `blocked` peers stay as you wrote them.
+- `meshd` writes only its own parts: the `synced` peers (keeping your `only` marks), and `private_key` if it has to create one. Your settings and your `static` and `blocked` peers stay as you wrote them.
 - A file with a mistake is reported in the log and left alone. `meshd` keeps the last good settings until you fix it.
 - Changes to `server_url`, `join_token`, `token_file`, `mtu` and `private_key` take effect after a restart. Everything else applies within a few seconds.
 - Changing `mesh` or `subnet` changes this machine's address, so the tunnel is recreated.
@@ -306,7 +307,7 @@ The interface is always named `knoten-wg`.
 
 - **The coordination server is for discovery only.** It passes on what each machine says about itself, and keeps no database or files. Restarting it loses nothing: machines re-announce themselves on their next sync.
 
-- **Each node has the final say over its own tunnel.** A `blocked` peer stays out whatever the server sends, and `static` peers stay even if the server drops them.
+- **Each node has the final say over its own tunnel.** A `blocked` peer stays out whatever the server sends, and `static` peers stay even if the server drops them. While any peer is marked `only`, no other peer gets in.
 
 **Known limitations**
 

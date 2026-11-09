@@ -175,14 +175,13 @@ func (d *Daemon) useAddress() {
 // loadPeers puts the peers in meshd.json in the book, so the tunnel has them,
 // the remembered server peers included, before the server answers.
 func (d *Daemon) loadPeers() {
-	d.book.LoadFromConfig(d.cfg.Peers, d.cfg.UsesServer())
+	d.book.LoadFromConfig(d.cfg.Peers)
 
-	n := len(peerbook.Only(d.cfg.Peers, peerbook.Synced))
+	n := len(peerbook.WithSource(d.cfg.Peers, peerbook.Synced))
 	switch {
 	case n == 0:
 	case !d.cfg.UsesServer():
-		d.log.Printf("%d synced peer(s) in %s are not used because server_url is not set; change their source to %q to keep them",
-			n, d.configPath, peerbook.Static)
+		d.log.Printf("using %d synced peer(s) as written; without server_url nothing updates them", n)
 	default:
 		d.log.Printf("using %d remembered synced peer(s) until the server answers", n)
 	}
