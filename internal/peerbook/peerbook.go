@@ -101,7 +101,7 @@ func (b *Book) SetFromServer(list []Peer) bool {
 			continue
 		}
 		p.Source = Synced
-		p.Only = b.synced[p.PublicKey].Only // the mark is yours, never the server's
+		p.Only = b.synced[p.PublicKey].Only
 		next[p.PublicKey] = p
 	}
 
